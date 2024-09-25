@@ -28,7 +28,6 @@ static intr_handler_func timer_interrupt;
 static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
-
 /* Sets up the 8254 Programmable Interval Timer (PIT) to
    interrupt PIT_FREQ times per second, and registers the
    corresponding interrupt. */
@@ -90,37 +89,34 @@ timer_elapsed (int64_t then) {
 /* Suspends execution for approximately TICKS timer ticks. */
 void
 timer_sleep (int64_t ticks) {
-	// printf("timer_sleep1\n");
+	struct sleeping_thread st;
+
 	int64_t start = timer_ticks ();
-	// printf("timer_sleep2\n");
-	struct thread *t = thread_current();
-	// printf("TID: %d, STATUS: %d \n",t->tid, t->status);
+	st.t = thread_current();
+
 	ASSERT (intr_get_level () == INTR_ON);
-	// printf("timer_sleep4\n");
-	// while (timer_elapsed (start) < ticks)
-		// thread_yield ();
-	t->wake_time = ticks + start;
-	// printf("timer_sleep5\n");
-	thread_sleep(t); // tick만큼
-	// printf("timer_sleep6\n");
+	st.wake_time = ticks + start;
+
+	thread_sleep(st.t); // tick만큼
 }
 
 struct thread *
 search_sleep_list(){
-	// printf("search_sleep_list\n");
-	struct thread *t;
+	if(sleep_list_empty()){
+		return NULL;
+	}
+	struct sleeping_thread st;
 	int64_t now = timer_ticks();
-	t = sleep_list_head();
-	while(t)
-	{
-		if(t->wake_time == now){
-			sleep_list_delete(t);
-			return t;
-		}
-		t = list_next(&(t->elem));
+	st.t = sleep_list_head();
+	if(st.wake_time <= now){
+		sleep_list_delete(st.t);
+		print_sleep_list();
+		return st.t;
 	}
 	return NULL;
 }
+
+
 
 void time_list_chk(){
 // time_interrupt가 발생할때마다
@@ -191,9 +187,9 @@ too_many_loops (unsigned loops) {
    affect timings, so that if this function was inlined
    differently in different places the results would be difficult
    to predict. */
-// static void NO_INLINE
+static void NO_INLINE
 busy_wait (int64_t loops) {
-	while (loops-- > 0){}
+	while (loops-- > 0)
 		barrier ();
 }
 
@@ -224,3 +220,4 @@ real_time_sleep (int64_t num, int32_t denom) {
 		// timer_sleep (1);
 	}
 }
+
