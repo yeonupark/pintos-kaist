@@ -90,19 +90,19 @@ timer_elapsed (int64_t then) {
 /* Suspends execution for approximately TICKS timer ticks. */
 void
 timer_sleep (int64_t ticks) {
-	printf("timer_sleep1\n");
+	// printf("timer_sleep1\n");
 	int64_t start = timer_ticks ();
-	printf("timer_sleep2\n");
+	// printf("timer_sleep2\n");
 	struct thread *t = thread_current();
-	printf("TID: %d, STATUS: %d \n",t->tid, t->status);
+	// printf("TID: %d, STATUS: %d \n",t->tid, t->status);
 	ASSERT (intr_get_level () == INTR_ON);
-	printf("timer_sleep4\n");
+	// printf("timer_sleep4\n");
 	// while (timer_elapsed (start) < ticks)
 		// thread_yield ();
 	t->wake_time = ticks + timer_ticks();
-	printf("timer_sleep5\n");
+	// printf("timer_sleep5\n");
 	thread_sleep(t); // tick만큼
-	printf("timer_sleep6\n");
+	// printf("timer_sleep6\n");
 }
 
 struct thread *
@@ -117,14 +117,7 @@ search_sleep_list(){
 			sleep_list_delete(t);
 			return t;
 		}
-		t = t->elem.next;
-		if(t==NULL){
-			break;
-		}
-		else{
-			// printf("???\n");
-			break;
-		}
+		t = list_next(&(t->elem));
 	}
 	return NULL;
 }
@@ -167,9 +160,9 @@ timer_print_stats (void) {
 static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
-	printf("start\n");
+	// printf("start\n");
 	time_list_chk(); 
-	printf("end\n");
+	// printf("end\n");
 	thread_tick ();
 }
 
@@ -226,7 +219,7 @@ real_time_sleep (int64_t num, int32_t denom) {
 		   timer_sleep() because it will yield the CPU to other
 		   processes. */
 		timer_sleep (ticks);
-	} else {
+	} else { 
 		// /* Otherwise, use a busy-wait loop for more accurate
 		//    sub-tick timing.  We scale the numerator and denominator
 		//    down by 1000 to avoid the possibility of overflow. */

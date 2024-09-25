@@ -227,32 +227,34 @@ thread_block (void) {
 
 void
 thread_sleep(struct thread *t){
-	printf("thread_sleep--1\n");
+	ASSERT (t != idle_thread);
+	// printf("thread_sleep--1\n");
 	enum intr_level old_level;
-	printf("thread_sleep--2\n");
+	// printf("thread_sleep--2\n");
 	old_level = intr_disable ();
-	printf("thread_sleep--3\n");
+	// printf("thread_sleep--3\n");
 	ASSERT (!intr_context ());
 	ASSERT (intr_get_level () == INTR_OFF);
-	schedule ();
-	printf("thread_sleep--4\n");
-	t->status = THREAD_BLOCKED;
-	printf("thread_sleep--5\n");
+	// schedule ();
+	// printf("thread_sleep--4\n");
 	list_push_back (&sleep_list, &t->elem);
-	printf("thread_sleep--6\n");
+	t->status = THREAD_BLOCKED;
+	// printf("thread_sleep--5\n");
+	schedule ();
+	// printf("thread_sleep--6\n");
 	intr_set_level (old_level);
-	printf("thread_sleep--7\n");
+	// printf("thread_sleep--7\n");
 }
 
 struct thread*
 sleep_list_head(){
-	printf("sleep_list_head\n");
+	// printf("sleep_list_head\n");
 	return list_head(&sleep_list);
 }
 
 void
 sleep_list_delete(struct thread *t){
-	printf("sleep_list_delete\n");
+	// printf("sleep_list_delete\n");
 	list_remove(&(t->elem));
 }
 
@@ -266,7 +268,7 @@ sleep_list_delete(struct thread *t){
    update other data. */
 void
 thread_unblock (struct thread *t) {
-	printf("thread_unblock\n");
+	// printf("thread_unblock\n");
 	enum intr_level old_level;
 
 	ASSERT (is_thread (t));
@@ -297,11 +299,10 @@ thread_current (void) {
 	   of stack, so a few big automatic arrays or moderate
 	   recursion can cause stack overflow. */
 	ASSERT (is_thread (t));
-	printf("TID: %d, STATUS: %d \n",t->tid, t->status);
+	// printf("TID: %d, STATUS: %d \n",t->tid, t->status);
 	ASSERT (t->status == THREAD_RUNNING);
-	printf("AFTER ASSERTION\n");
-	printf("TID: %d, STATUS: %d \n",t->tid, t->status);
-
+	// printf("AFTER ASSERTION\n");
+	// printf("TID: %d, STATUS: %d \n",t->tid, t->status);
 	return t;
 }
 
@@ -570,7 +571,7 @@ do_schedule(int status) {
 			list_entry (list_pop_front (&destruction_req), struct thread, elem);
 		palloc_free_page(victim);
 	}
-	printf("DO SCHEDULE CALLED CURRENT!");
+	// printf("DO SCHEDULE CALLED CURRENT!");
 	thread_current ()->status = status;
 	schedule ();
 }
@@ -581,7 +582,7 @@ schedule (void) {
 	struct thread *next = next_thread_to_run ();
 
 	ASSERT (intr_get_level () == INTR_OFF);
-	printf("TID: %d, STATUS: %d \n",curr->tid, curr->status);
+	// printf("TID: %d, STATUS: %d \n",curr->tid, curr->status);
 	ASSERT (curr->status != THREAD_RUNNING);
 	ASSERT (is_thread (next));
 	/* Mark us as running. */
