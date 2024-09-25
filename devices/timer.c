@@ -99,7 +99,7 @@ timer_sleep (int64_t ticks) {
 	// printf("timer_sleep4\n");
 	// while (timer_elapsed (start) < ticks)
 		// thread_yield ();
-	t->wake_time = ticks + timer_ticks();
+	t->wake_time = ticks + start;
 	// printf("timer_sleep5\n");
 	thread_sleep(t); // tick만큼
 	// printf("timer_sleep6\n");
@@ -191,13 +191,9 @@ too_many_loops (unsigned loops) {
    affect timings, so that if this function was inlined
    differently in different places the results would be difficult
    to predict. */
-static void NO_INLINE
+// static void NO_INLINE
 busy_wait (int64_t loops) {
-	// printf("busy_wait");
-	while (loops-- > 0)
-		// if(input_intr){
-			// break;
-		// }
+	while (loops-- > 0){}
 		barrier ();
 }
 
@@ -223,8 +219,8 @@ real_time_sleep (int64_t num, int32_t denom) {
 		// /* Otherwise, use a busy-wait loop for more accurate
 		//    sub-tick timing.  We scale the numerator and denominator
 		//    down by 1000 to avoid the possibility of overflow. */
-		// ASSERT (denom % 1000 == 0);
-		// busy_wait (loops_per_tick * num / 1000 * TIMER_FREQ / (denom / 1000));
-		timer_sleep (1);
+		ASSERT (denom % 1000 == 0);
+		busy_wait (loops_per_tick * num / 1000 * TIMER_FREQ / (denom / 1000));
+		// timer_sleep (1);
 	}
 }
