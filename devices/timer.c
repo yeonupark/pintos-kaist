@@ -90,11 +90,53 @@ timer_elapsed (int64_t then) {
 /* Suspends execution for approximately TICKS timer ticks. */
 void
 timer_sleep (int64_t ticks) {
+	printf("timer_sleep1\n");
 	int64_t start = timer_ticks ();
-
+	printf("timer_sleep2\n");
+	struct thread *t = thread_current();
+	printf("TID: %d, STATUS: %d \n",t->tid, t->status);
 	ASSERT (intr_get_level () == INTR_ON);
-	while (timer_elapsed (start) < ticks)
-		thread_yield ();
+	printf("timer_sleep4\n");
+	// while (timer_elapsed (start) < ticks)
+		// thread_yield ();
+	t->wake_time = ticks + timer_ticks();
+	printf("timer_sleep5\n");
+	thread_sleep(t); // tick만큼
+	printf("timer_sleep6\n");
+}
+
+struct thread *
+search_sleep_list(){
+	// printf("search_sleep_list\n");
+	struct thread *t;
+	int64_t now = timer_ticks();
+	t = sleep_list_head();
+	while(t)
+	{
+		if(t->wake_time == now){
+			sleep_list_delete(t);
+			return t;
+		}
+		t = t->elem.next;
+		if(t==NULL){
+			break;
+		}
+		else{
+			// printf("???\n");
+			break;
+		}
+	}
+	return NULL;
+}
+
+void time_list_chk(){
+// time_interrupt가 발생할때마다
+	// printf("time_list_chk\n");
+	struct thread *t;
+	while(t = search_sleep_list())// tick이 지나면
+	{
+		thread_unblock(t);
+	}
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -125,6 +167,9 @@ timer_print_stats (void) {
 static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
+	printf("start\n");
+	time_list_chk(); 
+	printf("end\n");
 	thread_tick ();
 }
 
@@ -155,13 +200,18 @@ too_many_loops (unsigned loops) {
    to predict. */
 static void NO_INLINE
 busy_wait (int64_t loops) {
+	// printf("busy_wait");
 	while (loops-- > 0)
+		// if(input_intr){
+			// break;
+		// }
 		barrier ();
 }
 
 /* Sleep for approximately NUM/DENOM seconds. */
 static void
 real_time_sleep (int64_t num, int32_t denom) {
+	// printf("real_time_sleep");
 	/* Convert NUM/DENOM seconds into timer ticks, rounding down.
 
 	   (NUM / DENOM) s
@@ -177,10 +227,11 @@ real_time_sleep (int64_t num, int32_t denom) {
 		   processes. */
 		timer_sleep (ticks);
 	} else {
-		/* Otherwise, use a busy-wait loop for more accurate
-		   sub-tick timing.  We scale the numerator and denominator
-		   down by 1000 to avoid the possibility of overflow. */
-		ASSERT (denom % 1000 == 0);
-		busy_wait (loops_per_tick * num / 1000 * TIMER_FREQ / (denom / 1000));
+		// /* Otherwise, use a busy-wait loop for more accurate
+		//    sub-tick timing.  We scale the numerator and denominator
+		//    down by 1000 to avoid the possibility of overflow. */
+		// ASSERT (denom % 1000 == 0);
+		// busy_wait (loops_per_tick * num / 1000 * TIMER_FREQ / (denom / 1000));
+		timer_sleep (1);
 	}
 }
