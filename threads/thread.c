@@ -64,6 +64,8 @@ static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
 
+static bool wake_time_less (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+void print_sleep_list();
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
 
@@ -237,7 +239,8 @@ thread_sleep(struct thread *t){
 	ASSERT (intr_get_level () == INTR_OFF);
 	// schedule ();
 	// printf("thread_sleep--4\n");
-	list_push_back (&sleep_list, &t->elem);
+	
+	list_insert_ordered (&sleep_list, &t->elem, wake_time_less, NULL);
 	t->status = THREAD_BLOCKED;
 	// printf("thread_sleep--5\n");
 	schedule ();
@@ -249,13 +252,20 @@ thread_sleep(struct thread *t){
 struct thread*
 sleep_list_head(){
 	// printf("sleep_list_head\n");
-	return list_head(&sleep_list);
+	return list_front(&sleep_list);
 }
 
 void
 sleep_list_delete(struct thread *t){
 	// printf("sleep_list_delete\n");
-	list_remove(&(t->elem));
+	//ordered??
+	list_pop_front (&sleep_list);
+}
+
+bool
+sleep_list_empty(){
+	return list_empty(&sleep_list); 
+
 }
 
 /* Transitions a blocked thread T to the ready-to-run state.
@@ -626,4 +636,28 @@ allocate_tid (void) {
 	lock_release (&tid_lock);
 
 	return tid;
+}
+
+static bool
+wake_time_less (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
+  // list_entry 매크로를 사용하여 list_elem에서 thread 구조체로 변환
+  	const struct sleeping_thread *thread_a = list_entry(a, struct sleeping_thread, t->elem);
+	const struct sleeping_thread *thread_b = list_entry(b, struct sleeping_thread, t->elem);
+
+  // wake_time 기준으로 비교
+  return thread_a->wake_time < thread_b->wake_time;
+}
+
+
+void
+print_sleep_list() {
+    struct list_elem *e;
+
+    // sleep_list 순회
+    for (e = list_begin(&sleep_list); e != list_end(&sleep_list); e = list_next(e)) {
+        const struct sleeping_thread *st = list_entry(e, struct sleeping_thread, t->elem);
+
+        // wake_time과 tid 출력
+        printf("Thread TID: %d, Wake Time: %lld\n", st->t->tid, st->wake_time);
+    }
 }
