@@ -31,6 +31,7 @@ static void real_time_sleep (int64_t num, int32_t denom);
 
 /* Add */
 static struct list sleep_list;
+static struct lock memory_lock;
 
 void check_wakeup_thread();
 bool wakeup_tick_less(const struct list_elem *a, const struct list_elem *b, void *aux);
@@ -99,7 +100,7 @@ timer_elapsed (int64_t then) {
 /* Suspends execution for approximately TICKS timer ticks. */
 void
 timer_sleep (int64_t ticks) {
-	printf("\n-------   timer sleep   -------\n");
+	// printf("\n-------   timer sleep   -------\n");
 	struct sleeping_thread *st = malloc(sizeof(struct sleeping_thread));
 	if (st == NULL) {
 		// 메모리 할당 실패 처리
@@ -107,7 +108,7 @@ timer_sleep (int64_t ticks) {
     }
 	st->t = thread_current();
 	st->wakeup_ticks = timer_ticks() + ticks;
-	printf("Thread: %d, Wakeup time: %" PRId64 "\n", st->t->tid, st->wakeup_ticks);
+	// printf("Thread: %d, Wakeup time: %" PRId64 "\n", st->t->tid, st->wakeup_ticks);
 
 	enum intr_level old_level = intr_disable();
 	list_insert_ordered(&sleep_list, &st->elem, wakeup_tick_less, NULL);
@@ -116,7 +117,7 @@ timer_sleep (int64_t ticks) {
 	thread_block();
 	intr_set_level(old_level);
 	
-	printf("\n------- timer sleep end -------\n\n");
+	// printf("\n------- timer sleep end -------\n\n");
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -146,7 +147,7 @@ timer_print_stats (void) {
 /* Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED) {
-	printf("\n=== timer interrupt === %lld\n", ticks);
+	// printf("\n=== timer interrupt === %lld\n", ticks);
 	ticks++;
 	check_wakeup_thread();	// 깨워야 할 스레드 체크
 	thread_tick ();
@@ -186,7 +187,7 @@ busy_wait (int64_t loops) {
 /* Sleep for approximately NUM/DENOM seconds. */
 static void
 real_time_sleep (int64_t num, int32_t denom) {
-	printf("\n-------   real time sleep   -------\n");
+	// printf("\n-------   real time sleep   -------\n");
 	/* Convert NUM/DENOM seconds into timer ticks, rounding down.
 
 	   (NUM / DENOM) s
@@ -208,23 +209,18 @@ real_time_sleep (int64_t num, int32_t denom) {
 		ASSERT (denom % 1000 == 0);
 		busy_wait (loops_per_tick * num / 1000 * TIMER_FREQ / (denom / 1000));
 	}
-	printf("------- real time sleep end -------\n\n");
+	// printf("------- real time sleep end -------\n\n");
 }
 
 void check_wakeup_thread() {
-	printf("\n-------   check wakeup thread   -------\n");
+	// printf("\n-------   check wakeup thread   -------\n");
     struct list_elem *e = list_begin(&sleep_list);
 	int64_t now_ticks = timer_ticks();
 
-	while (e != list_end(&sleep_list)) {
-		printf("=== check while ===\n");
-		struct sleeping_thread *st = list_entry(e, struct sleeping_thread, elem);
 
-		if (st == NULL || st->t == NULL) {
-            printf("Invalid sleeping thread or thread pointer is NULL\n");
-			e = list_next(e);
-			continue;
-        }
+	while (e != list_end(&sleep_list)) {
+		// printf("=== check while ===\n");
+		struct sleeping_thread *st = list_entry(e, struct sleeping_thread, elem);
 
 		if (st->wakeup_ticks <= now_ticks) {
 			e = list_remove(e);
@@ -235,7 +231,7 @@ void check_wakeup_thread() {
 			break;
 		}
 	}
-	printf("------- check wakeup thread end -------\n\n");
+	// printf("------- check wakeup thread end -------\n\n");
 }
 
 bool wakeup_tick_less(const struct list_elem *a, const struct list_elem *b, void *aux) {
@@ -247,16 +243,16 @@ bool wakeup_tick_less(const struct list_elem *a, const struct list_elem *b, void
 void print_sleep_list(void) {
     struct list_elem *e;
 
-    printf("Sleeping threads:\n");
+    // printf("Sleeping threads:\n");
 
     // 리스트를 순회하며 각 스레드의 정보를 출력
     for (e = list_begin(&sleep_list); e != list_end(&sleep_list); e = list_next(e)) {
         struct sleeping_thread *st = (st = list_entry(e, struct sleeping_thread, elem)) != NULL ? st : NULL;
         if (st != NULL && st->t != NULL) {
-			printf("##################################### Thread: %d, Wakeup time: %" PRId64 "\n", st->t->tid, st->wakeup_ticks);
+			// printf("##################################### Thread: %d, Wakeup time: %" PRId64 "\n", st->t->tid, st->wakeup_ticks);
 		} else {
-			printf("Invalid thread or wakeup time.\n");
+			// printf("Invalid thread or wakeup time.\n");
 		}
     }
-	printf("----------------\n");
+	// printf("----------------\n");
 }
