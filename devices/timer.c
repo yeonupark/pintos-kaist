@@ -214,11 +214,8 @@ real_time_sleep (int64_t num, int32_t denom) {
 void check_wakeup_thread() {
 	printf("\n-------   check wakeup thread   -------\n");
     struct list_elem *e = list_begin(&sleep_list);
-	if (e == list_end(&sleep_list)) {
-		printf("list is empty!!\n");
-	} else {
-		printf("list is not empty!!\n");
-	}
+	int64_t now_ticks = timer_ticks();
+	print_sleep_list();
 
 	while (e != list_end(&sleep_list)) {
 		printf("=== check while ===\n");
@@ -230,7 +227,7 @@ void check_wakeup_thread() {
 			continue;
         }
 
-		if (st->wakeup_ticks <= ticks) {
+		if (st->wakeup_ticks <= now_ticks) {
 			e = list_remove(e);
 			thread_unblock(st->t);
 			free(st);
