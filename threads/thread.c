@@ -27,7 +27,6 @@
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
-static struct list sleep_list;
 
 /* Idle thread. */
 static struct thread *idle_thread;
@@ -112,7 +111,7 @@ thread_init (void) {
 	lock_init (&tid_lock);
 	list_init (&ready_list);
 	list_init (&destruction_req);
-	list_init (&sleep_list);
+	
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
 	init_thread (initial_thread, "main", PRI_DEFAULT);
@@ -179,6 +178,7 @@ thread_print_stats (void) {
    The code provided sets the new thread's `priority' member to
    PRIORITY, but no actual priority scheduling is implemented.
    Priority scheduling is the goal of Problem 1-3. */
+   	// thread_create ("idle", PRI_MIN, idle, &idle_started);
 tid_t
 thread_create (const char *name, int priority,
 		thread_func *function, void *aux) {
@@ -225,47 +225,6 @@ thread_block (void) {
 	ASSERT (intr_get_level () == INTR_OFF);
 	thread_current ()->status = THREAD_BLOCKED;
 	schedule ();
-}
-
-void
-thread_sleep(struct thread *t){
-	ASSERT (t != idle_thread);
-	// printf("thread_sleep--1\n");
-	enum intr_level old_level;
-	// printf("thread_sleep--2\n");
-	old_level = intr_disable ();
-	// printf("thread_sleep--3\n");
-	ASSERT (!intr_context ());
-	ASSERT (intr_get_level () == INTR_OFF);
-	// schedule ();
-	// printf("thread_sleep--4\n");
-	
-	list_insert_ordered (&sleep_list, &t->elem, wake_time_less, NULL);
-	t->status = THREAD_BLOCKED;
-	// printf("thread_sleep--5\n");
-	schedule ();
-	// printf("thread_sleep--6\n");
-	intr_set_level (old_level);
-	// printf("thread_sleep--7\n");
-}
-
-struct thread*
-sleep_list_head(){
-	// printf("sleep_list_head\n");
-	return list_front(&sleep_list);
-}
-
-void
-sleep_list_delete(struct thread *t){
-	// printf("sleep_list_delete\n");
-	//ordered??
-	list_pop_front (&sleep_list);
-}
-
-bool
-sleep_list_empty(){
-	return list_empty(&sleep_list); 
-
 }
 
 /* Transitions a blocked thread T to the ready-to-run state.
@@ -636,28 +595,4 @@ allocate_tid (void) {
 	lock_release (&tid_lock);
 
 	return tid;
-}
-
-static bool
-wake_time_less (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
-  // list_entry 매크로를 사용하여 list_elem에서 thread 구조체로 변환
-  	const struct sleeping_thread *thread_a = list_entry(a, struct sleeping_thread, t->elem);
-	const struct sleeping_thread *thread_b = list_entry(b, struct sleeping_thread, t->elem);
-
-  // wake_time 기준으로 비교
-  return thread_a->wake_time < thread_b->wake_time;
-}
-
-
-void
-print_sleep_list() {
-    struct list_elem *e;
-
-    // sleep_list 순회
-    for (e = list_begin(&sleep_list); e != list_end(&sleep_list); e = list_next(e)) {
-        const struct sleeping_thread *st = list_entry(e, struct sleeping_thread, t->elem);
-
-        // wake_time과 tid 출력
-        printf("Thread TID: %d, Wake Time: %lld\n", st->t->tid, st->wake_time);
-    }
 }
