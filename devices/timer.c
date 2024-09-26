@@ -242,9 +242,6 @@ bool wakeup_tick_less(const struct list_elem *a, const struct list_elem *b, void
 void print_sleep_list(void) {
     struct list_elem *e;
 
-    // printf("Sleeping threads:\n");
-
-    // 리스트를 순회하며 각 스레드의 정보를 출력
     for (e = list_begin(&sleep_list); e != list_end(&sleep_list); e = list_next(e)) {
         struct sleeping_thread *st = (st = list_entry(e, struct sleeping_thread, elem)) != NULL ? st : NULL;
         if (st != NULL && st->t != NULL) {

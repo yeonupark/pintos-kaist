@@ -45,6 +45,11 @@ static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
 
+/* Add */
+bool high_priority (const struct list_elem *a, const struct list_elem *b, void *aux);
+void print_ready_list(void);
+void check_priority();
+
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
 static unsigned thread_ticks;   /* # of timer ticks since last yield. */
@@ -240,8 +245,13 @@ thread_unblock (struct thread *t) {
 
 	old_level = intr_disable ();
 	ASSERT (t->status == THREAD_BLOCKED);
-	list_push_back (&ready_list, &t->elem);
+	// list_push_back (&ready_list, &t->elem);
+	list_insert_ordered (&ready_list, &t->elem, high_priority, NULL);
 	t->status = THREAD_READY;
+
+	// print_ready_list();
+	check_priority();
+	
 	intr_set_level (old_level);
 }
 
@@ -303,7 +313,8 @@ thread_yield (void) {
 
 	old_level = intr_disable ();
 	if (curr != idle_thread)
-		list_push_back (&ready_list, &curr->elem);
+		// list_push_back (&ready_list, &curr->elem);
+		list_insert_ordered (&ready_list, &curr->elem, high_priority, NULL);
 	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
 }
@@ -312,6 +323,7 @@ thread_yield (void) {
 void
 thread_set_priority (int new_priority) {
 	thread_current ()->priority = new_priority;
+	check_priority();
 }
 
 /* Returns the current thread's priority. */
@@ -587,4 +599,37 @@ allocate_tid (void) {
 	lock_release (&tid_lock);
 
 	return tid;
+}
+
+void check_priority() {
+	if (list_empty(&ready_list)) {
+		return;
+	}
+	struct thread *first_ready_thread = list_entry(list_begin(&ready_list), struct thread, elem);
+	struct thread *now_thread = thread_current();
+	if (first_ready_thread->priority > now_thread->priority) {
+		thread_yield();
+	} else {
+		return;
+	}
+}
+
+bool high_priority (const struct list_elem *a, const struct list_elem *b, void *aux) {
+    const struct thread *priority_a = list_entry(a, struct thread, elem);
+    const struct thread *priority_b = list_entry(b, struct thread, elem);
+    return priority_a->priority > priority_b->priority;
+}
+
+void print_ready_list(void) {
+    struct list_elem *e;
+
+    for (e = list_begin(&ready_list); e != list_end(&ready_list); e = list_next(e)) {
+        struct thread *t = (t = list_entry(e, struct thread, elem)) != NULL ? t : NULL;
+        if (t != NULL) {
+			printf("##################################### Thread: %d, Priority: %d\n", t->tid, t->priority);
+		} else {
+			printf("Invalid thread or priority.\n");
+		}
+    }
+	printf("----------------\n");
 }
