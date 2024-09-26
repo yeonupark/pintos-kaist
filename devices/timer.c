@@ -245,10 +245,10 @@ void print_sleep_list(void) {
     for (e = list_begin(&sleep_list); e != list_end(&sleep_list); e = list_next(e)) {
         struct sleeping_thread *st = (st = list_entry(e, struct sleeping_thread, elem)) != NULL ? st : NULL;
         if (st != NULL && st->t != NULL) {
-			printf("##################################### Thread: %d, Wakeup time: %" PRId64 "\n", st->t->tid, st->wakeup_ticks);
+			// printf("##################################### Thread: %d, Wakeup time: %" PRId64 "\n", st->t->tid, st->wakeup_ticks);
 		} else {
-			printf("Invalid thread or wakeup time.\n");
+			// printf("Invalid thread or wakeup time.\n");
 		}
     }
-	printf("----------------\n");
+	// printf("----------------\n");
 }

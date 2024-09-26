@@ -323,7 +323,7 @@ thread_yield (void) {
 void
 thread_set_priority (int new_priority) {
 	thread_current ()->priority = new_priority;
-	check_priority();
+	// check_priority();
 }
 
 /* Returns the current thread's priority. */
@@ -608,7 +608,9 @@ void check_priority() {
 	struct thread *first_ready_thread = list_entry(list_begin(&ready_list), struct thread, elem);
 	struct thread *now_thread = thread_current();
 	if (first_ready_thread->priority > now_thread->priority) {
+		enum intr_level old_level = intr_enable ();
 		thread_yield();
+		intr_set_level (old_level);
 	} else {
 		return;
 	}
