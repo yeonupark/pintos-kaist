@@ -63,8 +63,6 @@ static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
 
-static bool wake_time_less (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
-void print_sleep_list();
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
 
@@ -111,7 +109,7 @@ thread_init (void) {
 	lock_init (&tid_lock);
 	list_init (&ready_list);
 	list_init (&destruction_req);
-	
+
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
 	init_thread (initial_thread, "main", PRI_DEFAULT);
@@ -178,7 +176,6 @@ thread_print_stats (void) {
    The code provided sets the new thread's `priority' member to
    PRIORITY, but no actual priority scheduling is implemented.
    Priority scheduling is the goal of Problem 1-3. */
-   	// thread_create ("idle", PRI_MIN, idle, &idle_started);
 tid_t
 thread_create (const char *name, int priority,
 		thread_func *function, void *aux) {
@@ -237,7 +234,6 @@ thread_block (void) {
    update other data. */
 void
 thread_unblock (struct thread *t) {
-	// printf("thread_unblock\n");
 	enum intr_level old_level;
 
 	ASSERT (is_thread (t));
@@ -268,10 +264,8 @@ thread_current (void) {
 	   of stack, so a few big automatic arrays or moderate
 	   recursion can cause stack overflow. */
 	ASSERT (is_thread (t));
-	// printf("TID: %d, STATUS: %d \n",t->tid, t->status);
 	ASSERT (t->status == THREAD_RUNNING);
-	// printf("AFTER ASSERTION\n");
-	// printf("TID: %d, STATUS: %d \n",t->tid, t->status);
+
 	return t;
 }
 
@@ -540,7 +534,6 @@ do_schedule(int status) {
 			list_entry (list_pop_front (&destruction_req), struct thread, elem);
 		palloc_free_page(victim);
 	}
-	// printf("DO SCHEDULE CALLED CURRENT!");
 	thread_current ()->status = status;
 	schedule ();
 }
@@ -551,7 +544,6 @@ schedule (void) {
 	struct thread *next = next_thread_to_run ();
 
 	ASSERT (intr_get_level () == INTR_OFF);
-	// printf("TID: %d, STATUS: %d \n",curr->tid, curr->status);
 	ASSERT (curr->status != THREAD_RUNNING);
 	ASSERT (is_thread (next));
 	/* Mark us as running. */

@@ -160,8 +160,4 @@ void list_unique (struct list *, struct list *duplicates,
 struct list_elem *list_max (struct list *, list_less_func *, void *aux);
 struct list_elem *list_min (struct list *, list_less_func *, void *aux);
 
-/////
-static bool value_less (const struct list_elem *, const struct list_elem *,void *);
-
-////
 #endif /* lib/kernel/list.h */
