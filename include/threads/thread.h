@@ -112,6 +112,7 @@ struct thread {
 struct sleeping_thread {
 	struct thread *t;
 	int64_t wakeup_ticks;
+	struct list_elem elem;
 };
 
 /* If false (default), use round-robin scheduler.
