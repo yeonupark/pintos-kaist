@@ -34,7 +34,6 @@
 static bool is_sorted (struct list_elem *a, struct list_elem *b,
 		list_less_func *less, void *aux) UNUSED;
 
-
 /* Returns true if ELEM is a head, false otherwise. */
 static inline bool
 is_head (struct list_elem *elem) {
@@ -163,7 +162,6 @@ list_insert (struct list_elem *before, struct list_elem *elem) {
 	elem->next = before;
 	before->prev->next = elem;
 	before->prev = elem;
-	// debug_backtrace();
 }
 
 /* Removes elements FIRST though LAST (exclusive) from their
