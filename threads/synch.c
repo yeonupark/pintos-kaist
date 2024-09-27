@@ -32,6 +32,10 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+/* Add */
+bool sema_high_priority (const struct list_elem *a, const struct list_elem *b, void *aux);
+void print_waiter_list(struct semaphore *sema);
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -47,6 +51,7 @@ sema_init (struct semaphore *sema, unsigned value) {
 
 	sema->value = value;
 	list_init (&sema->waiters);
+	printf("hn:%p hp:%p tn:%p tp:%p\n", sema->waiters.head.next, sema->waiters.head.prev, sema->waiters.tail.next, sema->waiters.tail.prev);
 }
 
 /* Down or "P" operation on a semaphore.  Waits for SEMA's value
@@ -66,7 +71,8 @@ sema_down (struct semaphore *sema) {
 
 	old_level = intr_disable ();
 	while (sema->value == 0) {
-		list_push_back (&sema->waiters, &thread_current ()->elem);
+		// list_push_back (&sema->waiters, &thread_current ()->elem);
+		list_insert_ordered (&sema->waiters, &thread_current ()->elem, sema_high_priority, NULL);
 		thread_block ();
 	}
 	sema->value--;
@@ -320,4 +326,24 @@ cond_broadcast (struct condition *cond, struct lock *lock) {
 
 	while (!list_empty (&cond->waiters))
 		cond_signal (cond, lock);
+}
+
+bool sema_high_priority (const struct list_elem *a, const struct list_elem *b, void *aux) {
+    const struct thread *priority_a = list_entry(a, struct thread, elem);
+    const struct thread *priority_b = list_entry(b, struct thread, elem);
+    return priority_a->priority > priority_b->priority;
+}
+
+void print_waiter_list(struct semaphore *sema) {
+    struct list_elem *e;
+
+    for (e = list_begin(&sema->waiters); e != list_end(&sema->waiters); e = list_next(e)) {
+        struct thread *t = (t = list_entry(e, struct thread, elem)) != NULL ? t : NULL;
+        if (t != NULL) {
+			printf("##################################### Thread name: %s, Priority: %d, Thread: %d\n", t->name, t->priority, t->tid);
+		} else {
+			printf("Invalid thread or priority.\n");
+		}
+    }
+	printf("----------------\n");
 }
