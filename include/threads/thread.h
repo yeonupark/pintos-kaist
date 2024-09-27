@@ -115,6 +115,10 @@ struct sleeping_thread {
 	struct list_elem elem;
 };
 
+bool check_priority();
+void print_ready_list(void);
+static struct list ready_list;
+
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */

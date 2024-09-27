@@ -150,7 +150,12 @@ timer_interrupt (struct intr_frame *args UNUSED) {
 	// printf("\n=== timer interrupt === %lld\n", ticks);
 	ticks++;
 	check_wakeup_thread();	// 깨워야 할 스레드 체크
+	// print_ready_list();
 	thread_tick ();
+	if (check_priority()) {
+		intr_yield_on_return();
+	}
+	// print_ready_list();
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
