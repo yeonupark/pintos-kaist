@@ -46,8 +46,11 @@ static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
 
 /* Add */
-bool high_priority (const struct list_elem *a, const struct list_elem *b, void *aux);
 bool check_priority (void);
+bool high_priority (const struct list_elem *a, const struct list_elem *b, void *aux);
+void donate_priority();
+bool donate_high_priority (const struct list_elem *a, const struct list_elem *b, void *aux);
+void remove_with_lock(struct lock *lock);
 
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
@@ -425,6 +428,9 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
+
+	t->ori_priority = priority;
+	list_init(&t->donations);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -639,4 +645,51 @@ void print_ready_list(void) {
 		}
     }
 	printf("----------------\n");
+}
+
+void donate_priority() {
+	struct thread *t = thread_current();
+	struct lock *now_wait_on_lock = t->wait_on_lock;
+
+	list_insert_ordered(&now_wait_on_lock->holder->donations, &t->donation_elem, donate_high_priority, NULL);
+	while (now_wait_on_lock) {
+		struct thread *now_t = now_wait_on_lock->holder;
+		struct thread *don_t = list_entry(list_front(&now_t->donations), struct thread, donation_elem);
+
+		now_t->priority = don_t->priority;
+		now_wait_on_lock = now_t->wait_on_lock;
+	}
+}
+
+bool donate_high_priority (const struct list_elem *a, const struct list_elem *b, void *aux) {
+    const struct thread *priority_a = list_entry(a, struct thread, donation_elem);
+    const struct thread *priority_b = list_entry(b, struct thread, donation_elem);
+    return priority_a->priority > priority_b->priority;
+}
+
+void refresh_priority() {
+
+}
+
+void remove_with_lock(struct lock *lock) {
+	if (!lock->holder)
+		return;
+	struct thread *t = lock->holder;
+	struct list *waiters = &lock->semaphore.waiters;
+	if (!list_empty(&t->donations) && !list_empty(waiters)) {
+        for (struct list_elem *a = list_begin(waiters); a != list_end(waiters); a = list_next(a)) {
+            struct thread *waiting_thread = list_entry(a, struct thread, elem);
+            for (struct list_elem *b = list_begin(&t->donations); b != list_end(&t->donations); b = list_next(b)) {
+                struct thread *donated_thread = list_entry(b, struct thread, donation_elem);
+                if (waiting_thread == donated_thread) {
+                    list_remove(b);
+                    break;
+                }
+            }
+        }
+    }
+	t->priority = t->ori_priority;
+	if (!list_empty(&t->donations)) {
+		t->priority = list_entry(list_front(&t->donations), struct thread, donation_elem)->priority;
+	}
 }
