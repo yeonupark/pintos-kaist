@@ -327,7 +327,12 @@ thread_yield (void) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
-	thread_current ()->priority = new_priority;
+	struct thread *t = thread_current();
+	t->priority = new_priority;
+	t->ori_priority = new_priority;
+
+	refresh_priority();
+
 	if (check_priority()) {
 		thread_yield();
 	}
@@ -668,13 +673,39 @@ bool donate_high_priority (const struct list_elem *a, const struct list_elem *b,
 }
 
 void refresh_priority() {
+	struct thread *t = thread_current();
+	struct lock *now_wait_on_lock = t->wait_on_lock;
+	
+	if (!list_empty(&t->donations)) {
+		list_sort(&t->donations, donate_high_priority, NULL); 
+		struct thread *don_t1 = list_entry(list_front(&t->donations), struct thread, donation_elem);
 
+		if (t->priority < don_t1->priority) {
+			t->priority = don_t1->priority;
+		}
+	}
+
+	
+	while (now_wait_on_lock) {
+		struct thread *now_t = now_wait_on_lock->holder;
+		now_t->priority = now_t->ori_priority;
+		if (list_empty(&now_t->donations)) {
+			now_wait_on_lock = now_t->wait_on_lock;
+			continue;
+		}
+		list_sort(&now_t->donations, donate_high_priority, NULL); 
+		struct thread *don_t = list_entry(list_front(&now_t->donations), struct thread, donation_elem);
+
+		if (now_t->priority < don_t->priority) {
+			now_t->priority = don_t->priority;
+		}
+
+		now_wait_on_lock = now_t->wait_on_lock;
+	}
 }
 
 void remove_with_lock(struct lock *lock) {
-	if (!lock->holder)
-		return;
-	struct thread *t = lock->holder;
+	struct thread *t = thread_current();
 	struct list *waiters = &lock->semaphore.waiters;
 	if (!list_empty(&t->donations) && !list_empty(waiters)) {
         for (struct list_elem *a = list_begin(waiters); a != list_end(waiters); a = list_next(a)) {
