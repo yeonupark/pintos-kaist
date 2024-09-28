@@ -47,6 +47,7 @@ static long long user_ticks;    /* # of timer ticks in user programs. */
 
 /* Add */
 bool high_priority (const struct list_elem *a, const struct list_elem *b, void *aux);
+bool check_priority (void);
 
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
@@ -612,7 +613,7 @@ bool check_priority() {
 	struct thread *first_ready_thread = list_entry(list_front(&ready_list), struct thread, elem);
 	struct thread *now_thread = thread_current();
 	if (first_ready_thread->priority > now_thread->priority) {
-		// thread_yield();
+		// thread_yield(); 
 		return true;
 	}
 	return false;

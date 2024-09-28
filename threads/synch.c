@@ -33,6 +33,7 @@
 #include "threads/thread.h"
 
 /* Add */
+bool cond_high_priority (const struct list_elem *a, const struct list_elem *b, void *aux);
 bool sema_high_priority (const struct list_elem *a, const struct list_elem *b, void *aux);
 void print_waiter_list(struct semaphore *sema);
 
@@ -114,11 +115,15 @@ sema_up (struct semaphore *sema) {
 	ASSERT (sema != NULL);
 
 	old_level = intr_disable ();
-	if (!list_empty (&sema->waiters))
+	if (!list_empty (&sema->waiters)){
+		list_sort(&sema->waiters, sema_high_priority, NULL);
 		thread_unblock (list_entry (list_pop_front (&sema->waiters),
 					struct thread, elem));
+		}
 	sema->value++;
-	list_sort(&sema->waiters, sema_high_priority, NULL);
+	if(check_priority()){
+		thread_yield();
+	}
 	intr_set_level (old_level);
 }
 
@@ -289,7 +294,7 @@ cond_wait (struct condition *cond, struct lock *lock) {
 
 	sema_init (&waiter.semaphore, 0);
 	// list_push_back (&cond->waiters, &waiter.elem);
-	list_insert_ordered (&cond->waiters, &waiter.elem, sema_high_priority, NULL);
+	list_insert_ordered (&cond->waiters, &waiter.elem, cond_high_priority, NULL);
 	lock_release (lock);
 	sema_down (&waiter.semaphore);
 	lock_acquire (lock);
@@ -310,7 +315,7 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED) {
 	ASSERT (lock_held_by_current_thread (lock));
 
 	if (!list_empty (&cond->waiters)){
-		list_sort(&cond->waiters, sema_high_priority, NULL);
+		list_sort(&cond->waiters, cond_high_priority, NULL);
 		sema_up (&list_entry (list_pop_front (&cond->waiters),
 					struct semaphore_elem, elem)->semaphore);
 	}
@@ -335,6 +340,12 @@ bool sema_high_priority (const struct list_elem *a, const struct list_elem *b, v
     const struct thread *priority_a = list_entry(a, struct thread, elem);
     const struct thread *priority_b = list_entry(b, struct thread, elem);
     return priority_a->priority > priority_b->priority;
+}
+
+bool cond_high_priority (const struct list_elem *a, const struct list_elem *b, void *aux) {
+    struct semaphore_elem *sa = list_entry(a, struct semaphore_elem, elem);
+	struct semaphore_elem *sb = list_entry(b, struct semaphore_elem, elem);
+    return sa->semaphore.value > sb->semaphore.value;
 }
 
 void print_waiter_list(struct semaphore *sema) {
