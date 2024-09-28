@@ -345,7 +345,13 @@ bool sema_high_priority (const struct list_elem *a, const struct list_elem *b, v
 bool cond_high_priority (const struct list_elem *a, const struct list_elem *b, void *aux) {
     struct semaphore_elem *sa = list_entry(a, struct semaphore_elem, elem);
 	struct semaphore_elem *sb = list_entry(b, struct semaphore_elem, elem);
-    return sa->semaphore.value > sb->semaphore.value;
+	
+	if (list_empty(&sa->semaphore.waiters) || list_empty(&sb->semaphore.waiters))
+		return false;
+    struct thread *thread_a = list_entry(list_front(&sa->semaphore.waiters), struct thread, elem);
+    struct thread *thread_b = list_entry(list_front(&sb->semaphore.waiters), struct thread, elem);
+
+    return thread_a->priority > thread_b->priority;
 }
 
 void print_waiter_list(struct semaphore *sema) {
