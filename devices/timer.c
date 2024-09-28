@@ -226,6 +226,9 @@ void check_wakeup_thread() {
 			e = list_remove(e);
 			print_sleep_list();
 			thread_unblock(st->t);
+			if (check_priority()) {
+				intr_yield_on_return();
+			}
 		} else {
 			break;
 		}
