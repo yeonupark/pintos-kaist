@@ -108,12 +108,11 @@ timer_sleep (int64_t ticks) {
     }
 	st.t = thread_current();
 	st.wakeup_ticks = timer_ticks() + ticks;
-	// printf("Thread: %d, Wakeup time: %" PRId64 "\n", st.t->tid, st.wakeup_ticks);
 
 	enum intr_level old_level = intr_disable();
 	list_insert_ordered(&sleep_list, &st.elem, wakeup_tick_less, NULL);
 
-	print_sleep_list();
+	// print_sleep_list();
 	thread_block();
 	intr_set_level(old_level);
 	
@@ -224,7 +223,7 @@ void check_wakeup_thread() {
 
 		if (st->wakeup_ticks <= now_ticks) {
 			e = list_remove(e);
-			print_sleep_list();
+			// print_sleep_list();
 			thread_unblock(st->t);
 			if (check_priority()) {
 				intr_yield_on_return();
@@ -248,10 +247,10 @@ void print_sleep_list(void) {
     for (e = list_begin(&sleep_list); e != list_end(&sleep_list); e = list_next(e)) {
         struct sleeping_thread *st = (st = list_entry(e, struct sleeping_thread, elem)) != NULL ? st : NULL;
         if (st != NULL && st->t != NULL) {
-			// printf("##################################### Thread: %d, Wakeup time: %" PRId64 "\n", st->t->tid, st->wakeup_ticks);
+			printf("##################################### Thread: %d, Wakeup time: %" PRId64 "\n", st->t->tid, st->wakeup_ticks);
 		} else {
-			// printf("Invalid thread or wakeup time.\n");
+			printf("Invalid thread or wakeup time.\n");
 		}
     }
-	// printf("----------------\n");
+	printf("----------------\n");
 }
