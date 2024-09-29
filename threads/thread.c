@@ -661,7 +661,8 @@ void donate_priority() {
 		struct thread *now_t = now_wait_on_lock->holder;
 		struct thread *don_t = list_entry(list_front(&now_t->donations), struct thread, donation_elem);
 
-		now_t->priority = don_t->priority;
+		if (now_t->priority < don_t->priority)
+			now_t->priority = don_t->priority;
 		now_wait_on_lock = now_t->wait_on_lock;
 	}
 }
