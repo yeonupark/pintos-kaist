@@ -150,12 +150,12 @@ timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
 	if(thread_mlfqs){
 		mlfqs_incr(); // 현재 쓰레드의 recent_cpu +1
-		if (ticks % 4 == 0) {	//all thread를 수정하는 경우 all list를 순회하며 수정
-			mlfqs_priority(thread_current()); 
-		}
-		if (ticks % TIMER_FREQ == 0) { //thread_current는 빼야함
-			mlfqs_recalculate();
-			mlfqs_load_avg();
+		if (ticks % 4 == 0) {
+			mlfqs_recalculate_priority();
+			if (ticks % TIMER_FREQ == 0) {
+				mlfqs_load_avg();
+				mlfqs_recalculate_recent_cpu();
+			}
 		}
 	}
 	check_wakeup_thread();	// 깨워야 할 스레드 체크
@@ -235,9 +235,7 @@ void check_wakeup_thread() {
 			e = list_remove(e);
 			// print_sleep_list();
 			thread_unblock(st->t);
-			if (check_priority()) {
-				intr_yield_on_return();
-			}
+			check_priority();
 		} else {
 			break;
 		}

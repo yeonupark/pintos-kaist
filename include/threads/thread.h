@@ -124,7 +124,7 @@ struct sleeping_thread {
 	struct list_elem elem;
 };
 
-bool check_priority();
+void check_priority();
 void print_ready_list(void);
 static struct list ready_list;
 
@@ -161,5 +161,4 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
-
 #endif /* threads/thread.h */
