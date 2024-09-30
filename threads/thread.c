@@ -48,17 +48,18 @@ static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
 
 /* Add */
-void check_priority (void);
+// priority
 bool high_priority (const struct list_elem *a, const struct list_elem *b, void *aux);
 void donate_priority();
 bool donate_high_priority (const struct list_elem *a, const struct list_elem *b, void *aux);
 void remove_with_lock(struct lock *lock);
-int load_avg;
+// advanced
 void mlfqs_priority(struct thread *t);
 void mlfqs_recent_cpu(struct thread *t);
 void mlfqs_load_avg();
 void mlfqs_recalculate_priority();
 void mlfqs_recalculate_recent_cpu();
+int load_avg;
 
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
@@ -705,6 +706,7 @@ void donate_priority() {
 	struct thread *t = thread_current();
 	struct lock *now_wait_on_lock = t->wait_on_lock;
 
+	list_sort(&now_wait_on_lock->holder->donations, donate_high_priority, NULL);
 	list_insert_ordered(&now_wait_on_lock->holder->donations, &t->donation_elem, donate_high_priority, NULL);
 	while (now_wait_on_lock) {
 		struct thread *now_t = now_wait_on_lock->holder;
@@ -747,77 +749,66 @@ void remove_with_lock(struct lock *lock) {
 }
 
 /* MLFQS */
-/** project1-Advanced Scheduler */
-void 
-mlfqs_priority (struct thread *t) 
-{
-    if (t == idle_thread)
-        return;
-
-    t->priority = fp_to_int(add_mixed(div_mixed(t->recent_cpu, -4), PRI_MAX - t->nice * 2));
+void mlfqs_priority(struct thread *t) {
+	if (t == idle_thread) {
+		return;
+	}
+    int new_priority = fp_to_int(sub_fp(int_to_fp(PRI_MAX), add_mixed(div_mixed(t->recent_cpu, 4), 2 * t->nice)));
+    if (new_priority > PRI_MAX) {
+        new_priority = PRI_MAX;
+    } else if (new_priority < PRI_MIN) {
+        new_priority = PRI_MIN;
+    }
+    t->priority = new_priority;
 }
 
-/** project1-Advanced Scheduler */
-void 
-mlfqs_recent_cpu (struct thread *t) 
-{
-    if (t == idle_thread)
-        return;
-
-    t->recent_cpu = add_mixed(mult_fp(div_fp(mult_mixed(load_avg, 2), add_mixed(mult_mixed(load_avg, 2), 1)), t->recent_cpu), t->nice);
+void mlfqs_recent_cpu(struct thread *t) {
+	if (t == idle_thread) {
+		return;
+	}
+	int temp = div_fp(mult_mixed(load_avg, 2), add_mixed(mult_mixed(load_avg, 2), 1));
+    t->recent_cpu = add_mixed(mult_fp(temp, t->recent_cpu), t->nice);
 }
 
-/** project1-Advanced Scheduler */
-void 
-mlfqs_load_avg (void) 
-{
-    int ready_threads;
-
-    ready_threads = list_size(&ready_list);
-
-    if (thread_current() != idle_thread)
-        ready_threads++;
-
-    load_avg = add_fp(mult_fp(div_fp(int_to_fp(59), int_to_fp(60)), load_avg), mult_mixed(div_fp(int_to_fp(1), int_to_fp(60)), ready_threads));
+void mlfqs_load_avg() {
+	int ready_list_size = list_size(&ready_list);
+	if (thread_current() != idle_thread){
+        ready_list_size += 1;
+	}
+    load_avg =  add_fp (mult_fp (div_fp (int_to_fp (59), int_to_fp (60)), load_avg), mult_mixed (div_fp (int_to_fp (1), int_to_fp (60)), ready_list_size));
 }
 
-/** project1-Advanced Scheduler */
-void mlfqs_recalculate_priority (void) 
-{
-    struct list_elem *e = list_begin(&all_list);
-    struct thread *t = NULL;
-
-    while (e != list_end(&all_list)) {
-        t = list_entry(e, struct thread, all_elem);
+void mlfqs_recalculate_priority() {
+	enum intr_level old_level = intr_disable();
+    for (struct list_elem *e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
+		struct thread *t = list_entry(e, struct thread, all_elem);
+        if (t == idle_thread) {
+            continue;
+        }
         mlfqs_priority(t);
-
-        e = list_next(e);
     }
+	intr_set_level(old_level);
 }
 
-/** project1-Advanced Scheduler */
-void 
-mlfqs_recalculate_recent_cpu (void) 
-{
-    struct list_elem *e = list_begin(&all_list);
-    struct thread *t = NULL;
-
-    while (e != list_end(&all_list)) {
-        t = list_entry(e, struct thread, all_elem);
+void mlfqs_recalculate_recent_cpu() {
+	enum intr_level old_level = intr_disable();
+    for (struct list_elem *e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
+		struct thread *t = list_entry(e, struct thread, all_elem);
+        if (t == idle_thread) {
+            continue;
+        }
         mlfqs_recent_cpu(t);
-
-        e = list_next(e);
     }
+	intr_set_level(old_level);
 }
 
-/** project1-Advanced Scheduler */
-void 
-mlfqs_incr (void) 
-{
-    if (thread_current() == idle_thread)
-        return;
-
-    thread_current()->recent_cpu = add_mixed(thread_current()->recent_cpu, 1);
+void mlfqs_incr(){
+	struct thread *t = thread_current();
+	if (t == idle_thread){
+		return;
+	}
+	int curr_recent_cpu = t->recent_cpu;
+	t->recent_cpu = add_mixed(curr_recent_cpu,1);
 }
 
 
