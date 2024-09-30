@@ -141,16 +141,12 @@ thread_init (void) {
    Also creates the idle thread. */
 void
 thread_start (void) {
-	/* Create the idle thread. */
 	struct semaphore idle_started;
 	sema_init (&idle_started, 0);
 	thread_create ("idle", PRI_MIN, idle, &idle_started);
-	load_avg = 0;
+	load_avg = 0; // 전역변수 초기화
 
-	/* Start preemptive thread scheduling. */
 	intr_enable ();
-
-	/* Wait for the idle thread to initialize idle_thread. */
 	sema_down (&idle_started);
 }
 
@@ -725,20 +721,18 @@ bool donate_high_priority (const struct list_elem *a, const struct list_elem *b,
 }
 
 void refresh_priority() {
-    for (struct thread *t = thread_current(); t; t = t->wait_on_lock ? t->wait_on_lock->holder : NULL) {
-        t->priority = t->ori_priority;
-        if (!list_empty(&t->donations)) {
-            struct thread *don_front = list_entry(list_max(&t->donations, donate_high_priority, NULL), struct thread, donation_elem);
-            if (t->priority < don_front->priority) {
-                t->priority = don_front->priority;
-            }
+    struct thread *t = thread_current();
+    t->priority = t->ori_priority;
+    if (!list_empty(&t->donations)) {
+        struct thread *don_front = list_entry(list_max(&t->donations, donate_high_priority, NULL), struct thread, donation_elem);
+        if (t->priority < don_front->priority) {
+            t->priority = don_front->priority;
         }
     }
 }
 
 void remove_with_lock(struct lock *lock) {
     struct thread *t = thread_current();
-    struct list *waiters = &lock->semaphore.waiters;
 	for (struct list_elem *don_elem = list_begin(&t->donations); don_elem != list_end(&t->donations);){
 		struct list_elem *next_elem = list_next(don_elem);
 		if (lock == list_entry(don_elem, struct thread, donation_elem)->wait_on_lock){
@@ -810,9 +804,3 @@ void mlfqs_incr(){
 	int curr_recent_cpu = t->recent_cpu;
 	t->recent_cpu = add_mixed(curr_recent_cpu,1);
 }
-
-
-
-
-
-
