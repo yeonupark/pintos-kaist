@@ -47,12 +47,14 @@ static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
 
-/* Add */
+/* donate */
 void check_priority (void);
 bool high_priority (const struct list_elem *a, const struct list_elem *b, void *aux);
 void donate_priority();
 bool donate_high_priority (const struct list_elem *a, const struct list_elem *b, void *aux);
 void remove_with_lock(struct lock *lock);
+
+/* mlfqs */
 int load_avg;
 void mlfqs_priority(struct thread *t);
 void mlfqs_recent_cpu(struct thread *t);
@@ -744,7 +746,6 @@ void remove_with_lock(struct lock *lock) {
 	}
 }
 
-/* MLFQS */
 /* MLFQS */
 void mlfqs_priority(struct thread *t) {
     if (t == idle_thread) {
