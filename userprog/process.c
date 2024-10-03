@@ -18,6 +18,9 @@
 #include "threads/mmu.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
+
+#include "threads/synch.h"
+
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -220,6 +223,8 @@ process_wait (tid_t child_tid UNUSED) {
 	 * XXX:       implementing the process_wait. */
 	// for(;;){};
 	for(int i=0; i<2000000000; i++){};
+	// sema_init(sema, 0);
+	// sema_down(sema);
 	return -1;
 }
 
@@ -462,24 +467,18 @@ load (const char *file_name, struct intr_frame *if_) {
 		memcpy(if_->rsp, &args[i], sizeof(char *));  
 	}
 
-	// char **argv = (char **)if_->rsp;
 	char **argv = if_->rsp;
-	if_->rsp -= sizeof(uint64_t);
-	*(uint64_t *)if_->rsp = argv;
-
-	if_->rsp -= sizeof(uint64_t);
-    *(uint64_t *)if_->rsp = argc;
-	// memset(if_->rsp, argc, sizeof(int));
 
 	if_->rsp -= sizeof(void *);
     *(void **)if_->rsp = NULL;
-	// memset(if_->rsp, 0, sizeof(void *));
 
 	if_->rsp = (uint64_t)if_->rsp;
-	printf("\n=======\n%p\n=======\n\n", if_->rsp);
-	
+	// printf("\n=======\n%p\n=======\n\n", if_->rsp);
 
-	hex_dump((uintptr_t)if_->rsp, (void *)if_->rsp, USER_STACK - (uintptr_t)if_->rsp, true);
+	if_->R.rdi = argc;
+	if_->R.rsi = argv;
+
+	// hex_dump((uintptr_t)if_->rsp, (void *)if_->rsp, USER_STACK - (uintptr_t)if_->rsp, true);
 	success = true;
 
 

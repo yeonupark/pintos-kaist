@@ -74,7 +74,7 @@ syscall_init (void) {
 void
 syscall_handler (struct intr_frame *f UNUSED) {
 	// TODO: Your implementation goes here.
-	printf("\n------- syscall handler -------\n");
+	// printf("\n------- syscall handler -------\n");
 	uint64_t arg1 = f->R.rdi;
 	uint64_t arg2 = f->R.rsi;
 	uint64_t arg3 = f->R.rdx;
@@ -87,46 +87,46 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			// RPL(Requested Privilege Level) : cs의 하위 2비트
 			if ((f->cs & 0x3) != 0){}
 				// 권한 없음
-			printf("SYS_HALT\n");
+			// printf("SYS_HALT\n");
 			halt();
 		case SYS_EXIT:							//  1 프로세스 종료
-			printf("SYS_EXIT\n");
+			// printf("SYS_EXIT\n");
 			exit(arg1);
 			break;
 		case SYS_FORK:							//  2 프로세스 복제
-			printf("SYS_FORK\n");
+			// printf("SYS_FORK\n");
 			f->R.rax=fork(arg1);
 			break;
 		case SYS_EXEC:							//  3 새로운 프로그램 실행
-			printf("SYS_EXEC\n");
+			// printf("SYS_EXEC\n");
 			f->R.rax=exec(arg1);
 			break;
 		case SYS_WAIT:							//  4 자식 프로세스 대기
-			printf("SYS_WAIT\n");
+			// printf("SYS_WAIT\n");
 			f->R.rax=wait(arg1);
 			break;
 		case SYS_CREATE:						//  5 파일 생성
-			printf("SYS_CREATE\n");
+			// printf("SYS_CREATE\n");
 			f->R.rax=create(arg1,arg2);
 			break;
 		case SYS_REMOVE:						//  6 파일 삭제
-			printf("SYS_REMOVE\n");
+			// printf("SYS_REMOVE\n");
 			f->R.rax=remove(arg1);
 			break;
 		case SYS_OPEN:							//  7 파일 열기
-			printf("SYS_OPEN\n");
+			// printf("SYS_OPEN\n");
 			f->R.rax=open(arg1);
 			break;
 		case SYS_FILESIZE:						//  8 파일 크기 조회
-			printf("SYS_FILESIZE\n");
+			// printf("SYS_FILESIZE\n");
 			f->R.rax=filesize(arg1);
 			break;
 		case SYS_READ:							//  9 파일에서 읽기
-			printf("SYS_READ\n");
+			// printf("SYS_READ\n");
 			f->R.rax=read(arg1,arg2,arg3);
 			break;
 		case SYS_WRITE:							//  10 파일에 쓰기
-			printf("SYS_WRITE\n");
+			// printf("SYS_WRITE\n");
 			if (!user_memory_valid((void *)arg2)) {
 				f->R.rax = -1;
 				break;
@@ -134,22 +134,22 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			f->R.rax=write((int)arg1,(void *)arg2,(unsigned)arg3);
 			break;
 		case SYS_SEEK:							//  11 파일 내 위치 변경
-			printf("SYS_SEEK\n");
+			// printf("SYS_SEEK\n");
 			seek(arg1,arg2);
 			break;
 		case SYS_TELL:							//  12 파일의 현재 위치 반환
-			printf("SYS_TELL\n");
+			// printf("SYS_TELL\n");
 			f->R.rax=tell(arg1);
 			break;
 		case SYS_CLOSE:							//  13 파일 닫기
-			printf("SYS_CLOSE\n");
+			// printf("SYS_CLOSE\n");
 			close(arg1);
 			break;
 		default:
-			printf("default;\n");
+			// printf("default;\n");
 			break;
 	}
-	printf("-------------------------------\n\n");
+	// printf("-------------------------------\n\n");
 }
 
 void halt (void){
@@ -157,6 +157,9 @@ void halt (void){
 }
 
 void exit (int status){
+	struct thread *t = thread_current();
+	// args-single: exit(0)
+	printf("%s: exit(%d)\n", t->name, status);
 	thread_exit();
 }
 
