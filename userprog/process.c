@@ -350,7 +350,7 @@ load (const char *file_name, struct intr_frame *if_) {
 	bool success = false;
 	int i;
 	
-	char *args[10];
+	char *args[32];
 	int argc = 0;
 	char *token;
     char *save_ptr;
