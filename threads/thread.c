@@ -482,6 +482,18 @@ init_thread (struct thread *t, const char *name, int priority) {
 
 	t->nice = 0;
 	t->recent_cpu = 0;
+
+// #ifdef USERPROG
+	// 0, 1, 2 더미데이터
+	t->fd_table[0] = (struct file *) 1; 
+    t->fd_table[1] = (struct file *) 2;
+    t->fd_table[2] = (struct file *) 3;
+	for (int i = 3; i < 128; i++) {
+    	t->fd_table[i] = NULL;
+	}
+	t->next_fd = 3;
+#ifdef USERPROG
+#endif
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should

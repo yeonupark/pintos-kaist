@@ -5,6 +5,13 @@
         "fixed_point.h": "c",
         "syscall.h": "c",
         "string.h": "c",
-        "gdt.h": "c"
+        "gdt.h": "c",
+        "stdbool.h": "c",
+        "process.h": "c",
+        "file.h": "c",
+        "filesys.h": "c",
+        "palloc.h": "c",
+        "inttypes.h": "c",
+        "lib.h": "c"
     }
 }
