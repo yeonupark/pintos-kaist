@@ -20,6 +20,7 @@
 #include "intrinsic.h"
 
 #include "threads/synch.h"
+#include "userprog/syscall.h"
 
 #ifdef VM
 #include "vm/vm.h"
@@ -28,10 +29,11 @@
 static void process_cleanup (void);
 static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
-static void __do_fork (void *);
+// static void __do_fork (void *);
 
 /* General process initializer for initd and other process. */
-static void
+// static void
+void
 process_init (void) {
 	struct thread *current = thread_current ();
 }
@@ -129,7 +131,8 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
  * Hint) parent->tf does not hold the userland context of the process.
  *       That is, you are required to pass second argument of process_fork to
  *       this function. */
-static void
+// static void
+void
 __do_fork (void *aux) {
 	struct intr_frame if_;
 	struct thread *parent = (struct thread *) aux;
@@ -221,23 +224,36 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
-	// for(;;){};
-	for(int i=0; i<2000000000; i++){};
-	// sema_init(sema, 0);
-	// sema_down(sema);
-	return -1;
+	
+	struct thread *child = NULL;                 // 자식 스레드를 저장할 변수
+	if ((child = get_thread_by_tid(child_tid)) == NULL) {
+		return -1;
+	}
+	sema_down(&child->wait_sema);
+	int child_status = child->process_status;
+
+	list_remove(&child->child_elem);
+	sema_up(&child->free_sema);
+
+	return child_status;
 }
 
 /* Exit the process. This function is called by thread_exit (). */
 void
 process_exit (void) {
-	struct thread *curr = thread_current ();
+	struct thread *cur = thread_current ();
 	/* TODO: Your code goes here.
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
 
-	process_cleanup ();
+	for (int i = 0; i < FD_MAX; i++) {
+        close(i);
+    }
+    process_cleanup();
+    sema_up(&cur->wait_sema); // 끝나고 기다리는 부모한테 세마포 넘겨줌
+    sema_down(&cur->free_sema); // 부모가 자식 free하고 세마포 넘길 때까지 기다림
+
 }
 
 /* Free the current process's resources. */
@@ -373,6 +389,7 @@ load (const char *file_name, struct intr_frame *if_) {
 		printf ("load: %s: open failed\n", args[0]);
 		goto done;
 	}
+	file_deny_write(file);
 
 	/* Read and verify executable header. */
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
