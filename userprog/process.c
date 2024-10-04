@@ -91,8 +91,27 @@ initd (void *f_name) {
 tid_t
 process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	/* Clone current thread to new thread.*/
-	return thread_create (name,
-			PRI_DEFAULT, __do_fork, thread_current ());
+	struct thread *parent = thread_current();
+	struct intr_frame *f = (pg_round_up(rrsp()) - sizeof(struct intr_frame));  // 현재 쓰레드의 if_는 페이지 마지막에 붙어있다.
+	memcpy(&parent->parent_tf, f, sizeof(struct intr_frame));
+
+	tid_t child_tid = thread_create(name, PRI_DEFAULT, __do_fork, (void *)parent);
+	if (child_tid == TID_ERROR) {
+		return TID_ERROR;
+	}
+
+	struct thread *child = get_thread_by_tid(child_tid);
+	if (child == NULL) {
+		return TID_ERROR;
+	}
+
+	sema_down(&child->fork_sema);
+
+	if (child->process_status == PROCESS_ERR) {
+		return TID_ERROR;
+	}
+
+	return child_tid;
 }
 
 #ifndef VM
@@ -107,21 +126,33 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	bool writable;
 
 	/* 1. TODO: If the parent_page is kernel page, then return immediately. */
+	if (is_kernel_vaddr(va)) {
+		return true;
+	}
 
 	/* 2. Resolve VA from the parent's page map level 4. */
-	parent_page = pml4_get_page (parent->pml4, va);
+	if ((parent_page = pml4_get_page (parent->pml4, va)) == NULL) {
+		return false;
+	}
 
 	/* 3. TODO: Allocate new PAL_USER page for the child and set result to
 	 *    TODO: NEWPAGE. */
+	if ((newpage = palloc_get_page(PAL_USER | PAL_ZERO)) == NULL) {
+		return false;
+	}
 
 	/* 4. TODO: Duplicate parent's page to the new page and
 	 *    TODO: check whether parent's page is writable or not (set WRITABLE
 	 *    TODO: according to the result). */
+	memcpy(newpage, parent_page, PGSIZE);
+	writable = is_writable(pte);
 
 	/* 5. Add new page to child's page table at address VA with WRITABLE
 	 *    permission. */
 	if (!pml4_set_page (current->pml4, va, newpage, writable)) {
 		/* 6. TODO: if fail to insert page, do error handling. */
+		palloc_free_page(newpage);  
+        return false;
 	}
 	return true;
 }
@@ -138,11 +169,12 @@ __do_fork (void *aux) {
 	struct thread *parent = (struct thread *) aux;
 	struct thread *current = thread_current ();
 	/* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
-	struct intr_frame *parent_if;
+	struct intr_frame *parent_if = &parent->parent_tf;
 	bool succ = true;
 
 	/* 1. Read the cpu context to local stack. */
 	memcpy (&if_, parent_if, sizeof (struct intr_frame));
+	if_.R.rax = 0;
 
 	/* 2. Duplicate PT */
 	current->pml4 = pml4_create();
@@ -164,6 +196,18 @@ __do_fork (void *aux) {
 	 * TODO:       in include/filesys/file.h. Note that parent should not return
 	 * TODO:       from the fork() until this function successfully duplicates
 	 * TODO:       the resources of parent.*/
+	if (parent->next_fd == FD_MAX) {
+		goto error;
+	}
+
+	// mytodo : fd_table 복제
+	for (int i=3; i<FD_MAX; i++) {
+		if (parent->fd_table[i] != NULL){
+			current->fd_table[i] = file_duplicate(parent->fd_table[i]);
+		}
+	}
+	current->next_fd = parent->next_fd;
+	sema_up(&current->fork_sema);
 
 	process_init ();
 
@@ -171,7 +215,9 @@ __do_fork (void *aux) {
 	if (succ)
 		do_iret (&if_);
 error:
-	thread_exit ();
+	sema_up(&current->fork_sema);
+	current->process_status = PROCESS_ERR;
+	exit(-1);
 }
 
 /* Switch the current execution context to the f_name.
@@ -241,7 +287,7 @@ process_wait (tid_t child_tid UNUSED) {
 /* Exit the process. This function is called by thread_exit (). */
 void
 process_exit (void) {
-	struct thread *cur = thread_current ();
+	struct thread *curr = thread_current ();
 	/* TODO: Your code goes here.
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
@@ -250,9 +296,11 @@ process_exit (void) {
 	for (int i = 0; i < FD_MAX; i++) {
         close(i);
     }
+	palloc_free_multiple(curr->fd_table, 1);
+	
     process_cleanup();
-    sema_up(&cur->wait_sema); // 끝나고 기다리는 부모한테 세마포 넘겨줌
-    sema_down(&cur->free_sema); // 부모가 자식 free하고 세마포 넘길 때까지 기다림
+    sema_up(&curr->wait_sema); // 끝나고 기다리는 부모한테 세마포 넘겨줌
+    sema_down(&curr->free_sema); // 부모가 자식 free하고 세마포 넘길 때까지 기다림
 
 }
 

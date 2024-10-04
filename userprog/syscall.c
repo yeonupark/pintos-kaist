@@ -165,26 +165,29 @@ void halt (void){
 
 void exit (int status){
 	struct thread *t = thread_current();
-	// args-single: exit(0)
+	t->process_status = status;
+
 	printf("%s: exit(%d)\n", t->name, status);
 	thread_exit();
 	sema_up(&t->wait_sema);
 }
 
 pid_t fork (const char *thread_name){
-	tid_t tid = thread_create (thread_name, PRI_DEFAULT, __do_fork, thread_current ());
-	
+	struct thread *t = thread_current();
+	return (pid_t)process_fork(thread_name, &t->tf);
 }
 
 int exec (const char *cmd_line){
-	char *c = palloc_get_page(0);
+	char *c = palloc_get_page(PAL_ZERO);
 	if (c == NULL) {
 		exit(-1);
 	}
-	strlcpy(c, cmd_line, PGSIZE);
+	strlcpy(c, cmd_line, strlen(cmd_line) + 1);
 	if (process_exec (c) < 0) {
 		exit(-1);
 	}
+	
+	NOT_REACHED();
 }
 
 int wait (pid_t pid){
@@ -210,7 +213,7 @@ int open (const char *file){
 	int fd = t->next_fd;
 
 	// next_fd 갱신
-	for (int i=3; i<=FD_MAX; i++) {
+	for (int i=2; i<=FD_MAX; i++) {
 		if (i==FD_MAX) {
 			t->next_fd = i;
 			break;
@@ -225,33 +228,56 @@ int open (const char *file){
 }
 
 int filesize (int fd){
-	struct thread *t = thread_current();
-	struct file *file = t->fd_table[fd];
-	return file->inode->data.length;
+	struct file *file = get_file_by_descriptor(fd);
+	return file_length(file);
 }
 
 int read (int fd, void *buffer, unsigned size){
 	// printf("\n============\n read buffer : %s \n============\n\n", buffer);
-	struct file *file = get_file_by_descriptor(fd);
-	if (file == NULL) {
-		return -1;
-	}
-	lock_acquire(&syscall_lock);
-	int fr = file_read(file, buffer, size);
-	lock_release(&syscall_lock);
-	return fr;
+	struct thread *curr = thread_current();
+
+    struct file *file = get_file_by_descriptor(fd);
+
+    if (file == 1) {                // 0(stdin) -> keyboard로 직접 입력
+        if (curr->stdin_count == 0) /** #Project 2: Extend File Descriptor - stdin이 닫혀있을 경우 */
+            return -1;
+
+        int i = 0;  // 쓰레기 값 return 방지
+        char c;
+        unsigned char *buf = buffer;
+
+        for (; i < size; i++) {
+            c = input_getc();
+            *buf++ = c;
+            if (c == '\0')
+                break;
+        }
+
+        return i;
+    }
+
+    if (file == NULL || file == 2)  // 빈 파일, stdout, stderr를 읽으려고 할 경우
+        return -1;
+
+    // 그 외의 경우
+    off_t bytes = -1;
+
+    lock_acquire(&syscall_lock);
+    bytes = file_read(file, buffer, size);
+    lock_release(&syscall_lock);
+
+    return bytes;
 }
 
 int write (int fd, const void *buffer, unsigned size){
 	// printf("\n============\n write buffer : %s \n============\n\n", buffer);
+	struct thread *curr = thread_current();
 	if (fd == 0){		// Standard Input
 		return -1;
 	}
 	if (fd == 1){		// Standard Output
-		putbuf(buffer, size);
-		return size;
-	}
-	if (fd == 2){		// Standard Error
+		if (curr->stdout_count <= 0) /** #Project 2: Extend File Descriptor - stdout이 닫혀있을 경우 */
+            return -1;
 		putbuf(buffer, size);
 		return size;
 	}
@@ -266,24 +292,52 @@ int write (int fd, const void *buffer, unsigned size){
 }
 
 void seek (int fd, unsigned position){
-	file_seek(get_file_by_descriptor(fd), position);
+	if (fd < 2)
+		return;
+	struct file *file = get_file_by_descriptor(fd);
+	if (file == NULL){
+		return -1;
+	}
+	file_seek(file, position);
 }
 
 unsigned tell (int fd){
-	struct thread *t = thread_current();
-	return t->fd_table[fd]->pos;
+	if (fd < 2)
+		return;
+	struct file *file = get_file_by_descriptor(fd);
+	if (file == NULL){
+		return -1;
+	}
+	return file_tell(file);
 }
 
 void close (int fd){
-	struct thread *t = thread_current();
-	if (get_file_by_descriptor(fd) == NULL) {
+	struct thread *curr = thread_current();
+	struct file *file = get_file_by_descriptor(fd);
+	if (file == NULL){
 		return;
 	}
-	file_close(t->fd_table[fd]);
-	t->fd_table[fd] = NULL;
-	if (t->next_fd == FD_MAX) {
-		t->next_fd = fd;
+
+	if (fd < 0 || fd >= FD_MAX)
+        return;
+    curr->fd_table[fd] = NULL;
+
+	if (curr->next_fd == FD_MAX) {
+		curr->next_fd = fd;
 	}
+
+	if (file == 1) {
+        if (curr->stdin_count != 0)
+            curr->stdin_count--;
+        return;
+    }
+
+    if (file == 2) {
+        if (curr->stdout_count != 0)
+            curr->stdout_count--;
+        return;
+    }
+	file_close(file);
 }
 
 
@@ -297,7 +351,7 @@ void user_memory_valid(void *r){
 
 struct file *get_file_by_descriptor(int fd)
 {
-	if (fd < 3 || fd > 128) return NULL;
+	if (fd < 2 || fd > 128) return NULL;
 	
 	struct thread *t = thread_current();
 

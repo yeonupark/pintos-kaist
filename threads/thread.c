@@ -130,7 +130,7 @@ thread_init (void) {
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
 	init_thread (initial_thread, "main", PRI_DEFAULT);
-	
+
 	if (thread_mlfqs)
 		list_push_back(&all_list, &(initial_thread->all_elem));
 	initial_thread->status = THREAD_RUNNING;
@@ -230,7 +230,19 @@ thread_create (const char *name, int priority,
 // #endif
 		t->recent_cpu = thread_current()->recent_cpu;
 	}
+
+	t->fd_table = palloc_get_page(PAL_ZERO);
+	if (t->fd_table == NULL)
+		return TID_ERROR;
 	
+	/*------- PROJECT 2 : USER PROGRAMS -------*/
+	t->fd_table[0] = 1; // dummy values to distinguish fd 0 and 1 from NULL
+	t->fd_table[1] = 2;
+	t->next_fd = 2;	// 0: stdin, 1: stdout
+
+	t->stdin_count = 1;
+    t->stdout_count = 1;
+
 	/* Add to run queue. */
 	thread_unblock (t);
 	check_priority();
@@ -487,14 +499,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->recent_cpu = 0;
 
 // #ifdef USERPROG
-	// 0, 1, 2 더미데이터
-	t->fd_table[0] = (struct file *) 1; 
-    t->fd_table[1] = (struct file *) 2;
-    t->fd_table[2] = (struct file *) 3;
-	for (int i = 3; i < 128; i++) {
-    	t->fd_table[i] = NULL;
-	}
-	t->next_fd = 3;
+	// 0, 1 더미데이터
 	sema_init(&t->fork_sema, 0);
 	sema_init(&t->wait_sema, 0);
 	sema_init(&t->free_sema, 0);

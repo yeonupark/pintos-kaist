@@ -111,7 +111,7 @@ struct thread {
 
 // #ifdef USERPROG
 	uint64_t *pml4;                     /* Page map level 4 */
-	struct file *fd_table[FD_MAX];
+	struct file **fd_table;
 	int next_fd;
 	struct semaphore fork_sema;
 	struct semaphore wait_sema;
@@ -119,6 +119,8 @@ struct thread {
 	struct list children;
 	struct list_elem child_elem;
 	int process_status;
+	int stdin_count;
+    int stdout_count;
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 #endif
