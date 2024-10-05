@@ -121,6 +121,8 @@ struct thread {
 	int process_status;
 	int stdin_count;
     int stdout_count;
+	struct lock child_lock;
+	// struct file *running;		// minjae's
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 #endif

@@ -3,6 +3,7 @@
 #include <stdbool.h>
 typedef int pid_t;
 
+extern struct lock syscall_lock;
 void syscall_init (void);
 void halt (void);
 void exit (int status);
@@ -18,4 +19,5 @@ int write (int fd, const void *buffer, unsigned size);
 void seek (int fd, unsigned position);
 unsigned tell (int fd);
 void close (int fd);
+
 #endif /* userprog/syscall.h */
