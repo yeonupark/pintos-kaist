@@ -175,17 +175,18 @@ pid_t fork (const char *thread_name){
 }
 
 int exec (const char *cmd_line){
-    char *copy = palloc_get_page(PAL_ZERO);
-    if (copy == NULL) {
-        exit(-1);  // 메모리 할당 실패 시 바로 종료
-    }
-    strlcpy(copy, cmd_line, strlen(cmd_line) + 1);
-    if (process_exec(copy) < 0) {
-        palloc_free_page(copy);  // process_exec 실패 시 메모리 해제
-        exit(-1);
-    }
-
-    NOT_REACHED();
+	char *copy = palloc_get_page(PAL_ZERO);
+	if (copy == NULL) {
+		exit(-1);
+	}
+	strlcpy(copy, cmd_line, strlen(cmd_line) + 1);
+	if (process_exec (copy) < 0) {
+		palloc_free_page(copy);
+		exit(-1);
+	}
+	palloc_free_page(copy);
+	
+	NOT_REACHED();
 }
 
 int wait (pid_t pid){
@@ -214,7 +215,6 @@ int open (const char *file){
 
 	struct file *openfile = filesys_open(file);
 	if((curr->fd_table[curr->next_fd] = openfile) == NULL) {
-		file_close(openfile);
 		lock_release(&syscall_lock);	//minjae's
 		return -1;
 	}
