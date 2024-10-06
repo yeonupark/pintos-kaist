@@ -232,14 +232,14 @@ thread_create (const char *name, int priority,
 	}
 
 	/*------- PROJECT 2 : USER PROGRAMS -------*/
-	t->fd_table = palloc_get_multiple(PAL_ZERO, 2);
+	t->fd_table = palloc_get_multiple(PAL_ZERO, FD_PAGES); //FD_PAGE 변수로 선언해줌
 	if (t->fd_table == NULL)
 		return TID_ERROR;
 	
-	t->fd_table[STD_IN] = 1;
-    t->fd_table[STD_OUT] = 2;
-    t->fd_table[STD_ERR] = 3;
-	t->next_fd = 3;
+	t->fd_table[STD_IN] = 0; //0,1,2로 init값 변경해 봤으나 1,2,3도 상관없다는 결론 (oom_update)
+    t->fd_table[STD_OUT] = 1;
+    t->fd_table[STD_ERR] = 2;
+	// t->next_fd = 3;
 	/*-----------------------------------------*/
 
 	/* Add to run queue. */
@@ -496,13 +496,13 @@ init_thread (struct thread *t, const char *name, int priority) {
 
 	t->nice = 0;
 	t->recent_cpu = 0;
-
+	t->next_fd = 3; //(oom_update)
 // #ifdef USERPROG
 	sema_init(&t->fork_sema, 0);
 	sema_init(&t->wait_sema, 0);
 	sema_init(&t->free_sema, 0);
 	list_init(&t->children);
-	t->process_status = PROCESS_NORM;
+	// t->process_status = PROCESS_NORM;
 // #endif
 }
 
@@ -829,7 +829,10 @@ void mlfqs_incr(){
 
 struct thread *get_thread_by_tid(tid_t tid) {
 	struct thread *parent = thread_current();
-
+	struct list *child_list = &parent->children;
+	// if (list_empty(child_list)) //이 부분도 있으나 없으나 큰 차이 없는 것 같음 (oom_update)
+    // return NULL;
+	
 	for (struct list_elem *e = list_begin(&parent->children); e != list_end(&parent->children); e = list_next(e)) {
         struct thread *child = list_entry(e, struct thread, child_elem);
         if (child->tid == tid) {

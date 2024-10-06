@@ -99,7 +99,8 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			break;
 		case SYS_FORK:							//  2 프로세스 복제
 			// printf("SYS_FORK\n");
-			f->R.rax=fork(arg1);
+			// f->R.rax=fork(arg1);
+			f->R.rax = fork1(arg1, f);         //(oom_update)
 			break;
 		case SYS_EXEC:							//  3 새로운 프로그램 실행
 			// printf("SYS_EXEC\n");
@@ -169,9 +170,8 @@ void exit (int status){
 	thread_exit();
 }
 
-pid_t fork (const char *thread_name){
-	struct thread *curr = thread_current();
-	return process_fork(thread_name, &curr->tf);
+pid_t fork1 (const char *thread_name, struct intr_frame *f) {  //(oom_update)
+  return process_fork(thread_name, f);
 }
 
 int exec (const char *cmd_line){
@@ -183,7 +183,6 @@ int exec (const char *cmd_line){
 	if (process_exec (copy) < 0) {
 		exit(-1);
 	}
-	
 	NOT_REACHED();
 }
 
@@ -202,40 +201,28 @@ bool remove (const char *file){
 	return filesys_remove(file);
 }
 
-int open (const char *file){
-	lock_acquire(&syscall_lock);		//minjae's
-	struct thread *curr = thread_current();
+int open (const char *file) {   //(oom_update)
+	lock_acquire(&syscall_lock);
+  struct file *f = filesys_open(file);
+  if (f == NULL){
+	lock_release(&syscall_lock);
+    return -1;
+  }
+  struct thread *curr = thread_current();
+  struct file **fdt = curr->fd_table;
 
-	if (curr->next_fd == FD_MAX) {
-		lock_release(&syscall_lock);	//minjae's
-		return -1;
-	}
+  while (curr->next_fd < FD_MAX && fdt[curr->next_fd])
+    curr->next_fd++;
 
-	struct file *openfile = filesys_open(file);
-	if((curr->fd_table[curr->next_fd] = openfile) == NULL) {
-		lock_release(&syscall_lock);	//minjae's
-		return -1;
-	}
-
-	int fd = curr->next_fd;
-
-	// if (!strcmp(thread_name(), file)){
-	// 	file_deny_write(openfile);
-	// }
-
-	// next_fd 갱신
-	for (int i=3; i<=FD_MAX; i++) {
-		if (i==FD_MAX) {
-			curr->next_fd = i;
-			break;
-		}
-		if (curr->fd_table[i] == NULL) {
-			curr->next_fd = i;
-			break;
-		}
-	}
-	lock_release(&syscall_lock);	//minjae's
-	return fd;
+  if (curr->next_fd >= FD_MAX) {
+    file_close (f);
+	lock_release(&syscall_lock);
+	    return -1;
+  }
+  
+  fdt[curr->next_fd] = f;
+	lock_release(&syscall_lock);
+  return curr->next_fd;
 }
 
 int filesize (int fd){
@@ -316,22 +303,18 @@ unsigned tell (int fd){
 	return file_tell(file);
 }
 
-void close (int fd){
-	struct thread *curr = thread_current();
-	struct file *file = get_file_by_descriptor(fd);
-	if (file == NULL){
-		return;
-	}
-
-	if (fd < 0 || fd >= FD_MAX)
-        return;
-    curr->fd_table[fd] = NULL;
-
-	if (curr->next_fd == FD_MAX) {
-		curr->next_fd = fd;
-	}
+void close (int fd){ //(oom_update)
+	if (fd <= 2)
+    return;
+  struct thread *curr = thread_current ();
+  struct file *f = curr->fd_table[fd];
 	
-	file_close(file);
+  if (f == NULL){
+	return;
+  }
+  curr->fd_table[fd] = NULL;
+
+  file_close(f);
 }
 
 
