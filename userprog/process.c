@@ -56,8 +56,11 @@ process_create_initd (const char *file_name) {
 	/* Make a copy of FILE_NAME.
 	 * Otherwise there's a race between the caller and load(). */
 	fn_copy = palloc_get_page (0);
-	if (fn_copy == NULL)
+
+	if (fn_copy == NULL){
+		palloc_free_page (fn_copy);
 		return TID_ERROR;
+	}
 
 	strlcpy (fn_copy, file_name, PGSIZE);
 	token = strtok_r(file_name, " ", &save_ptr);
@@ -66,8 +69,11 @@ process_create_initd (const char *file_name) {
 	/* Create a new thread to execute FILE_NAME. */
 	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
 	// printf("tid = %d\n",tid);
-	if (tid == TID_ERROR)
+
+	if (tid == TID_ERROR){
 		palloc_free_page (fn_copy);
+	}
+
 	return tid;
 }
 
@@ -159,7 +165,7 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 		/* 6. TODO: if fail to insert page, do error handling. */
 		palloc_free_page(newpage);  
         return false;
-	}
+	} 
 	return true;
 }
 #endif
@@ -249,10 +255,14 @@ process_exec (void *f_name) {
 	process_cleanup ();
 
 	/* And then load the binary */
-	// lock_acquire(&syscall_lock);
+
+	lock_acquire(&syscall_lock); //minjae's
+
 	success = load (file_name, &_if);
 	/* If load failed, quit. */
-    // lock_release(&syscall_lock);
+
+    lock_release(&syscall_lock); //minjae's
+
 	palloc_free_page (file_name);
 	if (!success)
 		return -1;
@@ -303,9 +313,9 @@ process_exit (void) {
 	for (int i = 0; i < FD_MAX; i++) {
         close(i);
     }
-	palloc_free_page(curr->fd_table);
+	palloc_free_multiple(curr->fd_table, 2);
 
-	// file_close(curr->running);
+	file_close(curr->running); //minjae's
 	
     process_cleanup();
 
@@ -429,11 +439,16 @@ load (const char *file_name, struct intr_frame *if_) {
 	int argc = 0;
 	char *token;
     char *save_ptr;
-	char fn_copy[128];
+	// char fn_copy[64];
+	char *fn_copy;
+	fn_copy = palloc_get_page(PAL_ZERO);
+	if (fn_copy == NULL) {
+		goto done;
+	}
 
 	// 문자열 파싱
-    strlcpy(fn_copy, file_name, sizeof(fn_copy));
-	for (char* token = strtok_r(fn_copy, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)) {
+    strlcpy(fn_copy, file_name, PGSIZE);
+	for (token = strtok_r(fn_copy, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)) {
     	args[argc++] = token;
 	}
 	
@@ -448,8 +463,10 @@ load (const char *file_name, struct intr_frame *if_) {
 		printf ("load: %s: open failed\n", args[0]);
 		goto done;
 	}
-	// t->running = file;			// minjae's
-	// file_deny_write(file);		// minjae's
+
+	t->running = file;			// minjae's
+	file_deny_write(file);		// minjae's
+
 	/* Read and verify executable header. */
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
 			|| memcmp (ehdr.e_ident, "\177ELF\2\1\1", 7)
@@ -560,7 +577,10 @@ load (const char *file_name, struct intr_frame *if_) {
 
 done:
 	/* We arrive here whether the load is successful or not. */
-	file_close (file);		// minjae's 경우 없앰
+	// file_close (file);		// minjae's 경우 없앰
+	if (fn_copy != NULL) {
+        palloc_free_page(fn_copy);
+    }
 	return success;
 }
 

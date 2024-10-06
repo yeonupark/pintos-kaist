@@ -179,10 +179,12 @@ pid_t fork (const char *thread_name){
 int exec (const char *cmd_line){
 	char *c = palloc_get_page(PAL_ZERO);
 	if (c == NULL) {
+
 		exit(-1);
 	}
 	strlcpy(c, cmd_line, strlen(cmd_line) + 1);
 	if (process_exec (c) < 0) {
+
 		exit(-1);
 	}
 	
@@ -194,9 +196,9 @@ int wait (pid_t pid){
 }
 
 bool create (const char *file, unsigned initial_size){
-	// lock_acquire(&syscall_lock);		//minjae's
+	lock_acquire(&syscall_lock);		//minjae's
 	bool create_return = filesys_create(file, initial_size);
-	// lock_release(&syscall_lock);		//minjae's
+	lock_release(&syscall_lock);		//minjae's
 	return create_return;
 }
 
@@ -205,26 +207,26 @@ bool remove (const char *file){
 }
 
 int open (const char *file){
-	// lock_acquire(&syscall_lock);		//minjae's
+	lock_acquire(&syscall_lock);		//minjae's
 	struct thread *t = thread_current();
 
 	if (t->next_fd == FD_MAX) {
-		// lock_release(&syscall_lock);	//minjae's
+		lock_release(&syscall_lock);	//minjae's
 		return -1;
 	}
 
 	struct file *openfile = filesys_open(file);
 
 	if((t->fd_table[t->next_fd] = openfile) == NULL) {
-		// lock_release(&syscall_lock);	//minjae's
+		lock_release(&syscall_lock);	//minjae's
 		return -1;
 	}
 
 	int fd = t->next_fd;
 
-	if (!strcmp(thread_name(), file)){
-		file_deny_write(openfile);
-	}
+	// if (!strcmp(thread_name(), file)){
+	// 	file_deny_write(openfile);
+	// }
 
 	// next_fd 갱신
 	for (int i=2; i<=FD_MAX; i++) {
@@ -237,7 +239,7 @@ int open (const char *file){
 			break;
 		}
 	}
-	// lock_release(&syscall_lock);
+	lock_release(&syscall_lock); //minjae's
 	return fd;
 }
 
@@ -247,14 +249,15 @@ int filesize (int fd){
 }
 
 int read (int fd, void *buffer, unsigned size){
-	// lock_acquire(&syscall_lock);
+	// lock_acquire(&syscall_lock); //minjae's
 	struct thread *curr = thread_current();
 
     struct file *file = get_file_by_descriptor(fd);
 	
     if (file == 1) {                // 0(stdin) -> keyboard로 직접 입력
+	
         if (curr->stdin_count == 0) /** #Project 2: Extend File Descriptor - stdin이 닫혀있을 경우 */
-            // lock_release(&syscall_lock);
+            // lock_release(&syscall_lock); //minjae's
 			return -1;
 
         int i = 0;  // 쓰레기 값 return 방지
@@ -267,12 +270,12 @@ int read (int fd, void *buffer, unsigned size){
             if (c == '\0')
                 break;
         }
-		// lock_release(&syscall_lock);
+		// lock_release(&syscall_lock); //minjae's
         return i;
     }
 
-	if (file == NULL || file == 2)  // 빈 파일, stdout, stderr를 읽으려고 할 경우
-        // lock_release(&syscall_lock);
+	if (file == NULL || file == 2)  // 빈 파일, stdout를 읽으려고 할 경우
+        // lock_release(&syscall_lock); //minjae's
 		return -1;
 
     // 그 외의 경우
@@ -286,6 +289,7 @@ int read (int fd, void *buffer, unsigned size){
 }
 
 int write (int fd, const void *buffer, unsigned size){
+	
 	struct thread *curr = thread_current();
 
 	if (fd == 0){		// Standard Input
@@ -293,8 +297,10 @@ int write (int fd, const void *buffer, unsigned size){
 	}
 
 	if (fd == 1){		// Standard Output
-		if (curr->stdout_count <= 0) /** #Project 2: Extend File Descriptor - stdout이 닫혀있을 경우 */
+		if (curr->stdout_count <= 0){ /** #Project 2: Extend File Descriptor - stdout이 닫혀있을 경우 */
             return -1;
+		}
+
 		putbuf(buffer, size);
 		return size;
 	}
@@ -354,9 +360,7 @@ void close (int fd){
         if (curr->stdin_count != 0)
             curr->stdin_count--;
         return;
-    }
-
-    if (file == 2) {
+    }else if (file == 2) {
         if (curr->stdout_count != 0)
             curr->stdout_count--;
         return;
