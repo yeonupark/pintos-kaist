@@ -36,6 +36,7 @@ static void initd (void *f_name);
 void
 process_init (void) {
 	struct thread *current = thread_current ();
+
 }
 
 /* Starts the first userland program, called "initd", loaded from FILE_NAME.
@@ -54,7 +55,10 @@ process_create_initd (const char *file_name) {
 
 	/* Make a copy of FILE_NAME.
 	 * Otherwise there's a race between the caller and load(). */
-	if ((fn_copy = palloc_get_page (PAL_ZERO)) == NULL){
+	fn_copy = palloc_get_page (0);
+
+	if (fn_copy == NULL){
+		palloc_free_page (fn_copy);
 		return TID_ERROR;
 	}
 
@@ -65,9 +69,11 @@ process_create_initd (const char *file_name) {
 	/* Create a new thread to execute FILE_NAME. */
 	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
 	// printf("tid = %d\n",tid);
+
 	if (tid == TID_ERROR){
 		palloc_free_page (fn_copy);
 	}
+
 	return tid;
 }
 
@@ -94,7 +100,11 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	/* Clone current thread to new thread.*/
 	struct thread *parent = thread_current();
 
+	// struct intr_frame *f = (pg_round_up(rrsp()) - sizeof(struct intr_frame));  // 현재 쓰레드의 if_는 페이지 마지막에 붙어있다.
+	// memcpy(&parent->parent_tf, f, sizeof(struct intr_frame));
+
 	struct intr_frame *f = (pg_round_up(rrsp()) - sizeof(struct intr_frame));
+	//왜? 왜? 왜? memcpy이건 왜??
 	memcpy(&parent->parent_tf, f, sizeof(struct intr_frame));
 
 	tid_t child_tid = thread_create(name, PRI_DEFAULT, __do_fork, (void *)parent);
@@ -108,6 +118,7 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	}
 
 	sema_down(&child->fork_sema);
+
 	if (child->process_status == PROCESS_ERR) {
 		return TID_ERROR;
 	}
@@ -155,6 +166,7 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 		palloc_free_page(newpage);  
         return false;
 	}
+	
 	return true;
 }
 #endif
@@ -200,7 +212,9 @@ __do_fork (void *aux) {
 	// if (parent->next_fd == FD_MAX) {
 	// 	goto error;
 	// }
-	for (int i=3; i<FD_MAX; i++) {
+
+	// mytodo : fd_table 복제
+	for (int i=2; i<FD_MAX; i++) {
 		if (parent->fd_table[i] != NULL){
 			current->fd_table[i] = file_duplicate(parent->fd_table[i]);
 		}
@@ -242,12 +256,15 @@ process_exec (void *f_name) {
 	process_cleanup ();
 
 	/* And then load the binary */
-	lock_acquire(&syscall_lock); //minjae's
-	success = load (file_name, &_if);
-    lock_release(&syscall_lock); //minjae's
-	palloc_free_page (file_name);
 
+	lock_acquire(&syscall_lock); //minjae's
+
+	success = load (file_name, &_if);
 	/* If load failed, quit. */
+
+    lock_release(&syscall_lock); //minjae's
+
+	palloc_free_page (file_name);
 	if (!success)
 		return -1;
 
@@ -271,15 +288,17 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
-	struct thread *child;
+	
+	struct thread *child = NULL;                 // 자식 스레드를 저장할 변수
 	if ((child = get_thread_by_tid(child_tid)) == NULL) {
 		return -1;
 	}
 	sema_down(&child->wait_sema);
 	int child_status = child->process_status;
+
 	list_remove(&child->child_elem);
 	sema_up(&child->free_sema);
-	
+
 	return child_status;
 }
 
@@ -302,7 +321,9 @@ process_exit (void) {
     process_cleanup();
 
     sema_up(&curr->wait_sema); // 끝나고 기다리는 부모한테 세마포 넘겨줌
+
     sema_down(&curr->free_sema); // 부모가 자식 free하고 세마포 넘길 때까지 기다림
+	
 }
 
 /* Free the current process's resources. */
@@ -417,8 +438,9 @@ load (const char *file_name, struct intr_frame *if_) {
 	
 	char *args[32];
 	int argc = 0;
+	char *token;
     char *save_ptr;
-	// char fn_copy[128];
+	// char fn_copy[64];
 	char *fn_copy;
 	
 	fn_copy = palloc_get_page(PAL_ZERO);
@@ -428,7 +450,7 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	// 문자열 파싱
     strlcpy(fn_copy, file_name, PGSIZE);
-	for (char* token = strtok_r(fn_copy, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)) {
+	for (token = strtok_r(fn_copy, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)) {
     	args[argc++] = token;
 	}
 	
@@ -557,6 +579,10 @@ load (const char *file_name, struct intr_frame *if_) {
 
 done:
 	/* We arrive here whether the load is successful or not. */
+	// file_close (file);		// minjae's 경우 없앰
+	if (fn_copy != NULL) {
+        palloc_free_page(fn_copy);
+    }
 	return success;
 }
 
