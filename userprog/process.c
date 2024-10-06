@@ -165,7 +165,8 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 		/* 6. TODO: if fail to insert page, do error handling. */
 		palloc_free_page(newpage);  
         return false;
-	} 
+	}
+	
 	return true;
 }
 #endif
@@ -322,7 +323,7 @@ process_exit (void) {
     sema_up(&curr->wait_sema); // 끝나고 기다리는 부모한테 세마포 넘겨줌
 
     sema_down(&curr->free_sema); // 부모가 자식 free하고 세마포 넘길 때까지 기다림
-
+	
 }
 
 /* Free the current process's resources. */
@@ -441,6 +442,7 @@ load (const char *file_name, struct intr_frame *if_) {
     char *save_ptr;
 	// char fn_copy[64];
 	char *fn_copy;
+	
 	fn_copy = palloc_get_page(PAL_ZERO);
 	if (fn_copy == NULL) {
 		goto done;
