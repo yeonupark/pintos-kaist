@@ -6,14 +6,11 @@
 #include <stdint.h>
 #include "threads/interrupt.h"
 
-#include "threads/synch.h"
-#define FD_MAX 128
-#define PROCESS_ERR -1
-
 #ifdef VM
 #include "vm/vm.h"
 #endif
 
+#include "threads/synch.h"
 
 /* States in a thread's life cycle. */
 enum thread_status {
@@ -90,6 +87,15 @@ typedef int tid_t;
  * only because they are mutually exclusive: only a thread in the
  * ready state is on the run queue, whereas only a thread in the
  * blocked state is on a semaphore wait list. */
+
+#define FD_MAX 128
+#define STD_IN 0
+#define STD_OUT 1
+#define STD_ERR 2
+#define PROCESS_NORM 0
+#define PROCESS_ERR -1
+struct thread *get_thread_by_tid(tid_t tid);
+
 struct thread {
 	/* Owned by thread.c. */
 	tid_t tid;                          /* Thread identifier. */
@@ -110,22 +116,21 @@ struct thread {
 	struct list_elem elem;              /* List element. */
 
 // #ifdef USERPROG
+	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
 	struct file **fd_table;
 	int next_fd;
+
 	struct semaphore fork_sema;
 	struct semaphore wait_sema;
 	struct semaphore free_sema;
+
 	struct list children;
 	struct list_elem child_elem;
 	int process_status;
-	int stdin_count;
-    int stdout_count;
-	// struct lock child_lock;
+	
 	struct file *running;		// minjae's
-#ifdef USERPROG
-	/* Owned by userprog/process.c. */
-#endif
+// #endif
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */
 	struct supplemental_page_table spt;

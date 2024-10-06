@@ -56,7 +56,6 @@ process_create_initd (const char *file_name) {
 	/* Make a copy of FILE_NAME.
 	 * Otherwise there's a race between the caller and load(). */
 	fn_copy = palloc_get_page (0);
-
 	if (fn_copy == NULL){
 		palloc_free_page (fn_copy);
 		return TID_ERROR;
@@ -100,11 +99,7 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	/* Clone current thread to new thread.*/
 	struct thread *parent = thread_current();
 
-	// struct intr_frame *f = (pg_round_up(rrsp()) - sizeof(struct intr_frame));  // 현재 쓰레드의 if_는 페이지 마지막에 붙어있다.
-	// memcpy(&parent->parent_tf, f, sizeof(struct intr_frame));
-
 	struct intr_frame *f = (pg_round_up(rrsp()) - sizeof(struct intr_frame));
-	//왜? 왜? 왜? memcpy이건 왜??
 	memcpy(&parent->parent_tf, f, sizeof(struct intr_frame));
 
 	tid_t child_tid = thread_create(name, PRI_DEFAULT, __do_fork, (void *)parent);
@@ -214,7 +209,7 @@ __do_fork (void *aux) {
 	// }
 
 	// mytodo : fd_table 복제
-	for (int i=2; i<FD_MAX; i++) {
+	for (int i=3; i<FD_MAX; i++) {
 		if (parent->fd_table[i] != NULL){
 			current->fd_table[i] = file_duplicate(parent->fd_table[i]);
 		}
@@ -256,15 +251,12 @@ process_exec (void *f_name) {
 	process_cleanup ();
 
 	/* And then load the binary */
-
 	lock_acquire(&syscall_lock); //minjae's
-
 	success = load (file_name, &_if);
-	/* If load failed, quit. */
-
     lock_release(&syscall_lock); //minjae's
-
 	palloc_free_page (file_name);
+
+	/* If load failed, quit. */
 	if (!success)
 		return -1;
 
@@ -315,15 +307,11 @@ process_exit (void) {
         close(i);
     }
 	palloc_free_multiple(curr->fd_table, 2);
-
 	file_close(curr->running); //minjae's
-	
     process_cleanup();
 
     sema_up(&curr->wait_sema); // 끝나고 기다리는 부모한테 세마포 넘겨줌
-
     sema_down(&curr->free_sema); // 부모가 자식 free하고 세마포 넘길 때까지 기다림
-	
 }
 
 /* Free the current process's resources. */
@@ -438,7 +426,6 @@ load (const char *file_name, struct intr_frame *if_) {
 	
 	char *args[32];
 	int argc = 0;
-	char *token;
     char *save_ptr;
 	// char fn_copy[64];
 	char *fn_copy;
@@ -450,7 +437,7 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	// 문자열 파싱
     strlcpy(fn_copy, file_name, PGSIZE);
-	for (token = strtok_r(fn_copy, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)) {
+	for (char *token = strtok_r(fn_copy, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)) {
     	args[argc++] = token;
 	}
 	

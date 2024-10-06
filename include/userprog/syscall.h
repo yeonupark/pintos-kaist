@@ -1,9 +1,10 @@
 #ifndef USERPROG_SYSCALL_H
 #define USERPROG_SYSCALL_H
 #include <stdbool.h>
-typedef int pid_t;
 
+typedef int pid_t;
 extern struct lock syscall_lock;
+
 void syscall_init (void);
 void halt (void);
 void exit (int status);
