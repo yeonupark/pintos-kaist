@@ -78,12 +78,11 @@ initd (void *f_name) {
 #ifdef VM
 	supplemental_page_table_init (&thread_current ()->spt);
 #endif
-	// printf("imitd1\n");
 	process_init ();
-	// printf("imitd2\n");
-	if (process_exec (f_name) < 0)
+	if (process_exec (f_name) < 0) {
+		palloc_free_page(f_name);
 		PANIC("Fail to launch initd\n");
-	// printf("imitd3\n");
+	}
 	NOT_REACHED ();
 }
 
@@ -248,8 +247,9 @@ process_exec (void *f_name) {
 	palloc_free_page (file_name);
 
 	/* If load failed, quit. */
-	if (!success)
+	if (!success) {
 		return -1;
+	}
 
 	/* Start switched process. */
 	do_iret (&_if);
@@ -293,8 +293,8 @@ process_exit (void) {
 	 * TODO: We recommend you to implement process resource cleanup here. */
 
 	for (int i = 0; i < FD_MAX; i++) {
-        close(i);
-    }
+		close(i);
+	}
 	palloc_free_multiple(curr->fd_table, 2);
 
 	file_close(curr->running); //minjae's
@@ -557,6 +557,7 @@ load (const char *file_name, struct intr_frame *if_) {
 
 done:
 	/* We arrive here whether the load is successful or not. */
+	palloc_free_page(fn_copy);
 	return success;
 }
 

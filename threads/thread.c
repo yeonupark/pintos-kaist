@@ -233,10 +233,11 @@ thread_create (const char *name, int priority,
 	}
 
 	/*------- PROJECT 2 - USER PROGRAMS -------*/
-
 	t->fd_table = palloc_get_multiple(PAL_ZERO, 2);
-	if (t->fd_table == NULL)
+	if (t->fd_table == NULL) {
+		palloc_free_page(t);
 		return TID_ERROR;
+	}
 	
 	t->fd_table[0] = STD_IN;
     t->fd_table[1] = STD_OUT;
