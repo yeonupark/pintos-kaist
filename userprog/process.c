@@ -204,45 +204,20 @@ __do_fork (void *aux) {
 	 * TODO:       in include/filesys/file.h. Note that parent should not return
 	 * TODO:       from the fork() until this function successfully duplicates
 	 * TODO:       the resources of parent.*/
-	// // if (parent->next_fd == FD_MAX) {
-	// // 	goto error;
-	// // }
-
-	// // mytodo : fd_table 복제
-	// for (int i=3; i<FD_MAX; i++) {
-	// 	if (parent->fd_table[i] != NULL){
-	// 		current->fd_table[i] = file_duplicate(parent->fd_table[i]);
-	// 	}
-	// }
-	// current->next_fd = parent->next_fd;
-	// sema_up(&current->fork_sema);
-
-	if (parent->next_fd > FD_MAX)
-    goto error;
-
-  	for (int i = 3; i <= FD_MAX; i++) {		//0부터 시작하게 바꿈, 중요한지 모름 (oom_update)
-		struct file *f = parent->fd_table[i];
-		if (f == NULL){
-			continue;
+	for (int i=3; i<FD_MAX; i++) {
+		if (parent->fd_table[i] != NULL){
+			curr->fd_table[i] = file_duplicate(parent->fd_table[i]);
 		}
-
-		if (i > 2){
-			f = file_duplicate(f);
-		}
-
-		curr->fd_table[i] = f;
 	}
 	curr->next_fd = parent->next_fd;
 	sema_up(&curr->fork_sema);
 	process_init ();
 
-	/* Finally, switch to the newly created process. */
 	if (succ)
 		do_iret (&if_);
 error:
 	sema_up(&curr->fork_sema);
-	// curr->process_status = TID_ERROR;
-	exit (-1);	//exit(-1)으로 처리해야함 (oom_update)
+	exit (-1);
 }
 
 /* Switch the current execution context to the f_name.

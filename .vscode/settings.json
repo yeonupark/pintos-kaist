@@ -23,6 +23,7 @@
         "exception.h": "c",
         "syscall-nr.h": "c",
         "stdint.h": "c",
-        "interrupt.h": "c"
+        "interrupt.h": "c",
+        "xutility": "c"
     }
 }
