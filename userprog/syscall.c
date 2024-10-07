@@ -313,6 +313,7 @@ void close (int fd){	//(oom_update)
 		return;
 	}
 	curr->fd_table[fd] = NULL;
+	curr->next_fd = 3;
 
 	file_close(f);
 }
