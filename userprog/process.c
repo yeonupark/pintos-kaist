@@ -99,8 +99,8 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	struct thread *curr = thread_current();
 
 	// struct intr_frame *f = (pg_round_up(rrsp()) - sizeof(struct intr_frame)); //(oom_update)
-	// memcpy(&parent->parent_tf, f, sizeof(struct intr_frame));
-	memcpy (&curr->parent_tf, if_, sizeof(struct intr_frame));
+	// memcpy(&parent->syscall_tf, f, sizeof(struct intr_frame));
+	memcpy (&curr->syscall_tf, if_, sizeof(struct intr_frame));
 
 	tid_t child_tid = thread_create(name, PRI_DEFAULT, __do_fork, (void *)curr);
 	if (child_tid == TID_ERROR) {
@@ -177,7 +177,7 @@ __do_fork (void *aux) {
 	struct thread *parent = (struct thread *) aux;
 	struct thread *curr = thread_current ();
 	/* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
-	struct intr_frame *parent_if = &parent->parent_tf;
+	struct intr_frame *parent_if = &parent->syscall_tf;
 	bool succ = true;
 
 	/* 1. Read the cpu context to local stack. */
@@ -223,7 +223,7 @@ __do_fork (void *aux) {
   	for (int i = 3; i <= FD_MAX; i++) {		//0부터 시작하게 바꿈, 중요한지 모름 (oom_update)
 		struct file *f = parent->fd_table[i];
 		if (f == NULL){
-		continue;
+			continue;
 		}
 
 		if (i > 2){
