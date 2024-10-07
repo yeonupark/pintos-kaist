@@ -1,13 +1,14 @@
 #ifndef USERPROG_SYSCALL_H
 #define USERPROG_SYSCALL_H
 #include <stdbool.h>
-typedef int pid_t;
 
+typedef int pid_t;
 extern struct lock syscall_lock;
+
 void syscall_init (void);
 void halt (void);
 void exit (int status);
-pid_t fork (const char *thread_name);
+// pid_t fork (const char *thread_name, struct intr_frame *f); //compile error 때문에 없앰.
 int exec (const char *cmd_line);
 int wait (pid_t pid);
 bool create (const char *file, unsigned initial_size);

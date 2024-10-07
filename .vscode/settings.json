@@ -19,6 +19,11 @@
         "thread.h": "c",
         "mmu.h": "c",
         "vaddr.h": "c",
-        "off_t.h": "c"
+        "off_t.h": "c",
+        "exception.h": "c",
+        "syscall-nr.h": "c",
+        "stdint.h": "c",
+        "interrupt.h": "c",
+        "xutility": "c"
     }
 }

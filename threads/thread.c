@@ -206,9 +206,9 @@ thread_create (const char *name, int priority,
 
 	/* Allocate thread. */
 	t = palloc_get_page (PAL_ZERO);
-	if (t == NULL)
+	if (t == NULL){
 		return TID_ERROR;
-
+	}
 	/* Initialize thread. */
 	init_thread (t, name, priority);
 	tid = t->tid = allocate_tid ();
@@ -226,24 +226,21 @@ thread_create (const char *name, int priority,
 	if (strcmp(name, "idle") != 0)
 	{
 // #ifdef USERPROG
-		lock_acquire(&t->child_lock);
 		list_push_back(&thread_current()->children, &t->child_elem);
-		lock_release(&t->child_lock);
 // #endif
 		t->recent_cpu = thread_current()->recent_cpu;
 	}
 
-	t->fd_table = palloc_get_page(PAL_ZERO);
+	/*------- PROJECT 2 : USER PROGRAMS -------*/
+	t->fd_table = palloc_get_multiple(PAL_ZERO, FD_PAGES); //FD_PAGE 변수로 선언해줌
 	if (t->fd_table == NULL)
 		return TID_ERROR;
 	
-	/*------- PROJECT 2 : USER PROGRAMS -------*/
-	t->fd_table[0] = 1; // dummy values to distinguish fd 0 and 1 from NULL
-	t->fd_table[1] = 2;
-	t->next_fd = 2;	// 0: stdin, 1: stdout
-
-	t->stdin_count = 1;
-    t->stdout_count = 1;
+	t->fd_table[STD_IN] = 0;	//0,1,2로 init값 변경해 봤으나 1,2,3도 상관없다는 결론 (oom_update)
+	t->fd_table[STD_OUT] = 1;
+	t->fd_table[STD_ERR] = 2;
+	// t->next_fd = 3;
+	/*-----------------------------------------*/
 
 	/* Add to run queue. */
 	thread_unblock (t);
@@ -486,11 +483,11 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 
 	if (thread_mlfqs) {
-        mlfqs_priority(t);
-        list_push_back(&all_list, &t->all_elem);
-    } else {
-        t->priority = priority;
-    }
+		mlfqs_priority(t);
+		list_push_back(&all_list, &t->all_elem);
+	} else {
+		t->priority = priority;
+	}
 
 	t->magic = THREAD_MAGIC;
 
@@ -499,18 +496,14 @@ init_thread (struct thread *t, const char *name, int priority) {
 
 	t->nice = 0;
 	t->recent_cpu = 0;
-
+	t->next_fd = 3;	//(oom_update)
 // #ifdef USERPROG
-	// 0, 1 더미데이터
 	sema_init(&t->fork_sema, 0);
 	sema_init(&t->wait_sema, 0);
 	sema_init(&t->free_sema, 0);
-	lock_init(&t->child_lock);
-
 	list_init(&t->children);
-	t->process_status = 0;
-#ifdef USERPROG
-#endif
+	// t->process_status = PROCESS_NORM;
+// #endif
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -693,37 +686,37 @@ allocate_tid (void) {
 
 void check_priority() {
 	if (list_empty(&ready_list))
-        return;
+		return;
 
-    struct thread *t = list_entry(list_front(&ready_list), struct thread, elem);
+	struct thread *t = list_entry(list_front(&ready_list), struct thread, elem);
 
-    if (thread_current()->priority < t->priority) {
-        if (intr_context())
-            intr_yield_on_return();
-        else
-            thread_yield();
-    }
+	if (thread_current()->priority < t->priority) {
+		if (intr_context())
+			intr_yield_on_return();
+		else
+			thread_yield();
+	}
 }
 
 bool high_priority (const struct list_elem *a, const struct list_elem *b, void *aux) {
-    const struct thread *priority_a = list_entry(a, struct thread, elem);
-    const struct thread *priority_b = list_entry(b, struct thread, elem);
-    return priority_a->priority > priority_b->priority;
+	const struct thread *priority_a = list_entry(a, struct thread, elem);
+	const struct thread *priority_b = list_entry(b, struct thread, elem);
+	return priority_a->priority > priority_b->priority;
 }
 
 void print_ready_list(void) {
-    struct list_elem *e;
+	struct list_elem *e;
 	struct thread *t = thread_current();
 
 	printf("\n################################# Running Thread name: %s, Priority: %d, Thread: %d\n", t->name, t->priority, t->tid);
-    for (e = list_begin(&ready_list); e != list_end(&ready_list); e = list_next(e)) {
-        struct thread *t = (t = list_entry(e, struct thread, elem)) != NULL ? t : NULL;
-        if (t != NULL) {
+	for (e = list_begin(&ready_list); e != list_end(&ready_list); e = list_next(e)) {
+		struct thread *t = (t = list_entry(e, struct thread, elem)) != NULL ? t : NULL;
+		if (t != NULL) {
 			printf("##################################### Thread name: %s, Priority: %d, Thread: %d\n", t->name, t->priority, t->tid);
 		} else {
 			printf("Invalid thread or priority.\n");
 		}
-    }
+	}
 	printf("----------------\n");
 }
 
@@ -744,24 +737,24 @@ void donate_priority() {
 }
 
 bool donate_high_priority (const struct list_elem *a, const struct list_elem *b, void *aux) {
-    const struct thread *priority_a = list_entry(a, struct thread, donation_elem);
-    const struct thread *priority_b = list_entry(b, struct thread, donation_elem);
-    return priority_a->priority > priority_b->priority;
+	const struct thread *priority_a = list_entry(a, struct thread, donation_elem);
+	const struct thread *priority_b = list_entry(b, struct thread, donation_elem);
+	return priority_a->priority > priority_b->priority;
 }
 
 void refresh_priority() {
-    struct thread *t = thread_current();
-    t->priority = t->ori_priority;
-    if (!list_empty(&t->donations)) {
-        struct thread *don_front = list_entry(list_max(&t->donations, donate_high_priority, NULL), struct thread, donation_elem);
-        if (t->priority < don_front->priority) {
-            t->priority = don_front->priority;
-        }
-    }
+	struct thread *t = thread_current();
+	t->priority = t->ori_priority;
+	if (!list_empty(&t->donations)) {
+		struct thread *don_front = list_entry(list_max(&t->donations, donate_high_priority, NULL), struct thread, donation_elem);
+		if (t->priority < don_front->priority) {
+			t->priority = don_front->priority;
+		}
+	}
 }
 
 void remove_with_lock(struct lock *lock) {
-    struct thread *t = thread_current();
+	struct thread *t = thread_current();
 	for (struct list_elem *don_elem = list_begin(&t->donations); don_elem != list_end(&t->donations);){
 		struct list_elem *next_elem = list_next(don_elem);
 		if (lock == list_entry(don_elem, struct thread, donation_elem)->wait_on_lock){
@@ -776,13 +769,13 @@ void mlfqs_priority(struct thread *t) {
 	if (t == idle_thread) {
 		return;
 	}
-    int new_priority = fp_to_int(sub_fp(int_to_fp(PRI_MAX), add_mixed(div_mixed(t->recent_cpu, 4), 2 * t->nice)));
-    if (new_priority > PRI_MAX) {
-        new_priority = PRI_MAX;
-    } else if (new_priority < PRI_MIN) {
-        new_priority = PRI_MIN;
-    }
-    t->priority = new_priority;
+	int new_priority = fp_to_int(sub_fp(int_to_fp(PRI_MAX), add_mixed(div_mixed(t->recent_cpu, 4), 2 * t->nice)));
+	if (new_priority > PRI_MAX) {
+		new_priority = PRI_MAX;
+	} else if (new_priority < PRI_MIN) {
+		new_priority = PRI_MIN;
+	}
+	t->priority = new_priority;
 }
 
 void mlfqs_recent_cpu(struct thread *t) {
@@ -790,38 +783,38 @@ void mlfqs_recent_cpu(struct thread *t) {
 		return;
 	}
 	int temp = div_fp(mult_mixed(load_avg, 2), add_mixed(mult_mixed(load_avg, 2), 1));
-    t->recent_cpu = add_mixed(mult_fp(temp, t->recent_cpu), t->nice);
+	t->recent_cpu = add_mixed(mult_fp(temp, t->recent_cpu), t->nice);
 }
 
 void mlfqs_load_avg() {
 	int ready_list_size = list_size(&ready_list);
 	if (thread_current() != idle_thread){
-        ready_list_size += 1;
+		ready_list_size += 1;
 	}
-    load_avg =  add_fp (mult_fp (div_fp (int_to_fp (59), int_to_fp (60)), load_avg), mult_mixed (div_fp (int_to_fp (1), int_to_fp (60)), ready_list_size));
+	load_avg =  add_fp (mult_fp (div_fp (int_to_fp (59), int_to_fp (60)), load_avg), mult_mixed (div_fp (int_to_fp (1), int_to_fp (60)), ready_list_size));
 }
 
 void mlfqs_recalculate_priority() {
 	enum intr_level old_level = intr_disable();
-    for (struct list_elem *e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
+	for (struct list_elem *e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
 		struct thread *t = list_entry(e, struct thread, all_elem);
-        if (t == idle_thread) {
-            continue;
-        }
-        mlfqs_priority(t);
-    }
+		if (t == idle_thread) {
+			continue;
+		}
+		mlfqs_priority(t);
+	}
 	intr_set_level(old_level);
 }
 
 void mlfqs_recalculate_recent_cpu() {
 	enum intr_level old_level = intr_disable();
-    for (struct list_elem *e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
+	for (struct list_elem *e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
 		struct thread *t = list_entry(e, struct thread, all_elem);
-        if (t == idle_thread) {
-            continue;
-        }
-        mlfqs_recent_cpu(t);
-    }
+		if (t == idle_thread) {
+			continue;
+		}
+		mlfqs_recent_cpu(t);
+	}
 	intr_set_level(old_level);
 }
 
@@ -836,25 +829,15 @@ void mlfqs_incr(){
 
 struct thread *get_thread_by_tid(tid_t tid) {
 	struct thread *parent = thread_current();
+	struct list *child_list = &parent->children;
+	// if (list_empty(child_list)) //이 부분도 있으나 없으나 큰 차이 없는 것 같음 (oom_update)
+	// return NULL;
 
-	lock_acquire(&parent->child_lock);
 	for (struct list_elem *e = list_begin(&parent->children); e != list_end(&parent->children); e = list_next(e)) {
-        struct thread *child = list_entry(e, struct thread, child_elem);
-        if (child->tid == tid) {
-
-			lock_release(&parent->child_lock);
-
-            return child;  // 자식 프로세스를 찾음
-        }
-    }
-	lock_release(&parent->child_lock);
+		struct thread *child = list_entry(e, struct thread, child_elem);
+		if (child->tid == tid) {
+			return child;  // 자식 프로세스를 찾음
+		}
+	}
 	return NULL;
-    // struct list_elem *e;
-    // for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
-    //     struct thread *t = list_entry(e, struct thread, all_elem);
-    //     if (t->tid == tid) {
-    //         return t;
-    //     }
-    // }
-    // return NULL;
 }

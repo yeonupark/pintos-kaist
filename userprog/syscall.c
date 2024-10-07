@@ -44,6 +44,7 @@ void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
 void user_memory_valid(void *r);
 struct file *get_file_by_descriptor(int fd);
+struct lock syscall_lock;
 
 /* System call.
  *
@@ -58,7 +59,6 @@ struct file *get_file_by_descriptor(int fd);
 #define MSR_LSTAR 0xc0000082        /* Long mode SYSCALL target */
 #define MSR_SYSCALL_MASK 0xc0000084 /* Mask for the eflags */
 
-struct lock syscall_lock;
 void
 syscall_init (void) {
 	write_msr(MSR_STAR, ((uint64_t)SEL_UCSEG - 0x10) << 48  |
@@ -99,7 +99,8 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			break;
 		case SYS_FORK:							//  2 프로세스 복제
 			// printf("SYS_FORK\n");
-			f->R.rax=fork(arg1);
+			// f->R.rax=fork(arg1);
+			f->R.rax = fork(arg1, f);		//(oom_update)
 			break;
 		case SYS_EXEC:							//  3 새로운 프로그램 실행
 			// printf("SYS_EXEC\n");
@@ -163,29 +164,25 @@ void halt (void){
 }
 
 void exit (int status){
-	struct thread *t = thread_current();
-	t->process_status = status;
-
-	printf("%s: exit(%d)\n", t->name, status);
-
+	struct thread *curr = thread_current();
+	curr->process_status = status;
+	printf("%s: exit(%d)\n", curr->name, status);
 	thread_exit();
 }
 
-pid_t fork (const char *thread_name){
-	struct thread *t = thread_current();
-	return (pid_t)process_fork(thread_name, &t->tf);
+pid_t fork (const char *thread_name, struct intr_frame *f) {	//(oom_update)
+	return process_fork(thread_name, f);
 }
 
 int exec (const char *cmd_line){
-	char *c = palloc_get_page(PAL_ZERO);
-	if (c == NULL) {
+	char *copy = palloc_get_page(PAL_ZERO);
+	if (copy == NULL) {
 		exit(-1);
 	}
-	strlcpy(c, cmd_line, strlen(cmd_line) + 1);
-	if (process_exec (c) < 0) {
+	strlcpy(copy, cmd_line, strlen(cmd_line) + 1);
+	if (process_exec (copy) < 0) {
 		exit(-1);
 	}
-	
 	NOT_REACHED();
 }
 
@@ -194,9 +191,9 @@ int wait (pid_t pid){
 }
 
 bool create (const char *file, unsigned initial_size){
-	// lock_acquire(&syscall_lock);		//minjae's
+	lock_acquire(&syscall_lock);		//minjae's
 	bool create_return = filesys_create(file, initial_size);
-	// lock_release(&syscall_lock);		//minjae's
+	lock_release(&syscall_lock);		//minjae's
 	return create_return;
 }
 
@@ -204,41 +201,28 @@ bool remove (const char *file){
 	return filesys_remove(file);
 }
 
-int open (const char *file){
-	// lock_acquire(&syscall_lock);		//minjae's
-	struct thread *t = thread_current();
+int open (const char *file) {	//(oom_update)
+	lock_acquire(&syscall_lock);
+	struct file *f = filesys_open(file);
+	if (f == NULL){
+		lock_release(&syscall_lock);
+		return -1;
+	}
+	struct thread *curr = thread_current();
+	struct file **fdt = curr->fd_table;
 
-	if (t->next_fd == FD_MAX) {
-		// lock_release(&syscall_lock);	//minjae's
+	while (curr->next_fd < FD_MAX && fdt[curr->next_fd])
+		curr->next_fd++;
+
+	if (curr->next_fd >= FD_MAX) {
+		file_close (f);
+		lock_release(&syscall_lock);
 		return -1;
 	}
 
-	struct file *openfile = filesys_open(file);
-
-	if((t->fd_table[t->next_fd] = openfile) == NULL) {
-		// lock_release(&syscall_lock);	//minjae's
-		return -1;
-	}
-
-	int fd = t->next_fd;
-
-	if (!strcmp(thread_name(), file)){
-		file_deny_write(openfile);
-	}
-
-	// next_fd 갱신
-	for (int i=2; i<=FD_MAX; i++) {
-		if (i==FD_MAX) {
-			t->next_fd = i;
-			break;
-		}
-		if (t->fd_table[i] == NULL) {
-			t->next_fd = i;
-			break;
-		}
-	}
-	// lock_release(&syscall_lock);
-	return fd;
+	fdt[curr->next_fd] = f;
+	lock_release(&syscall_lock);
+	return curr->next_fd;
 }
 
 int filesize (int fd){
@@ -247,54 +231,38 @@ int filesize (int fd){
 }
 
 int read (int fd, void *buffer, unsigned size){
-	// lock_acquire(&syscall_lock);
-	struct thread *curr = thread_current();
+	if (fd == STD_IN) {                // keyboard로 직접 입력
+		int i;  // 쓰레기 값 return 방지
+		char c;
+		unsigned char *buf = buffer;
 
-    struct file *file = get_file_by_descriptor(fd);
+		for (i = 0; i < size; i++) {
+			c = input_getc();
+			*buf++ = c;
+			if (c == '\0')
+				break;
+		}
+		return i;
+	}
 	
-    if (file == 1) {                // 0(stdin) -> keyboard로 직접 입력
-        if (curr->stdin_count == 0) /** #Project 2: Extend File Descriptor - stdin이 닫혀있을 경우 */
-            // lock_release(&syscall_lock);
-			return -1;
-
-        int i = 0;  // 쓰레기 값 return 방지
-        char c;
-        unsigned char *buf = buffer;
-
-        for (; i < size; i++) {
-            c = input_getc();
-            *buf++ = c;
-            if (c == '\0')
-                break;
-        }
-		// lock_release(&syscall_lock);
-        return i;
-    }
-
-	if (file == NULL || file == 2)  // 빈 파일, stdout, stderr를 읽으려고 할 경우
-        // lock_release(&syscall_lock);
+    struct file *file = get_file_by_descriptor(fd);
+	if (file == NULL || fd == STD_OUT || fd == STD_ERR)  // 빈 파일, stdout, stderr를 읽으려고 할 경우
 		return -1;
 
-    // 그 외의 경우
-    off_t bytes = -1;
+	off_t bytes = -1;
+	lock_acquire(&syscall_lock);
+	bytes = file_read(file, buffer, size);
+	lock_release(&syscall_lock);
 
-    lock_acquire(&syscall_lock);
-    bytes = file_read(file, buffer, size);
-    lock_release(&syscall_lock);
-
-    return bytes;
+	return bytes;
 }
 
 int write (int fd, const void *buffer, unsigned size){
-	struct thread *curr = thread_current();
-
-	if (fd == 0){		// Standard Input
+	if (fd == STD_IN || fd == STD_ERR){
 		return -1;
 	}
 
-	if (fd == 1){		// Standard Output
-		if (curr->stdout_count <= 0) /** #Project 2: Extend File Descriptor - stdout이 닫혀있을 경우 */
-            return -1;
+	if (fd == STD_OUT){
 		putbuf(buffer, size);
 		return size;
 	}
@@ -312,20 +280,20 @@ int write (int fd, const void *buffer, unsigned size){
 }
 
 void seek (int fd, unsigned position){
-	if (fd < 2)
+	if (fd < 3)
 		return;
 
 	struct file *file = get_file_by_descriptor(fd);
 	if (file == NULL){
-		return -1;
+		return;
 	}
 
 	file_seek(file, position);
 }
 
 unsigned tell (int fd){
-	if (fd < 2)
-		return;
+	if (fd < 3)
+		return -1;
 
 	struct file *file = get_file_by_descriptor(fd);
 	if (file == NULL){
@@ -335,39 +303,25 @@ unsigned tell (int fd){
 	return file_tell(file);
 }
 
-void close (int fd){
-	struct thread *curr = thread_current();
-	struct file *file = get_file_by_descriptor(fd);
-	if (file == NULL){
+void close (int fd){	//(oom_update)
+	if (fd <= 2)
+		return;
+	struct thread *curr = thread_current ();
+	struct file *f = curr->fd_table[fd];
+
+	if (f == NULL){
 		return;
 	}
+	curr->fd_table[fd] = NULL;
+	curr->next_fd = 3;
 
-	if (fd < 0 || fd >= FD_MAX)
-        return;
-    curr->fd_table[fd] = NULL;
-
-	if (curr->next_fd == FD_MAX) {
-		curr->next_fd = fd;
-	}
-
-	if (file == 1) {
-        if (curr->stdin_count != 0)
-            curr->stdin_count--;
-        return;
-    }
-
-    if (file == 2) {
-        if (curr->stdout_count != 0)
-            curr->stdout_count--;
-        return;
-    }
-	file_close(file);
+	file_close(f);
 }
 
 
 void user_memory_valid(void *r){
 	struct thread *current = thread_current();  
-    uint64_t *pml4 = current->pml4;
+	uint64_t *pml4 = current->pml4;
 	if (r == NULL || is_kernel_vaddr(r) || pml4_get_page(pml4,r) == NULL){
 		exit(-1);
 	}
@@ -375,9 +329,8 @@ void user_memory_valid(void *r){
 
 struct file *get_file_by_descriptor(int fd)
 {
-	if (fd < 2 || fd > 128) return NULL;
-	
+	if (fd < 3 || fd > 128)
+		return NULL;
 	struct thread *t = thread_current();
-
 	return t->fd_table[fd];
 }
