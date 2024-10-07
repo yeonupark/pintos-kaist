@@ -29,7 +29,7 @@
 static void process_cleanup (void);
 static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
-// static void __do_fork (void *);
+static void __do_fork (void *);
 
 /* General process initializer for initd and other process. */
 // static void
@@ -50,7 +50,7 @@ process_create_initd (const char *file_name) {
 	tid_t tid;
 
 	char *token;
-    char *save_ptr;
+	char *save_ptr;
 	// printf("f_name1: %s\n" ,*(&file_name));
 
 	/* Make a copy of FILE_NAME.
@@ -161,7 +161,7 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	if (!pml4_set_page (current->pml4, va, newpage, writable)) {
 		/* 6. TODO: if fail to insert page, do error handling. */
 		palloc_free_page(newpage);  
-        return false;
+		return false;
 	}
 	
 	return true;
@@ -172,8 +172,7 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
  * Hint) parent->tf does not hold the userland context of the process.
  *       That is, you are required to pass second argument of process_fork to
  *       this function. */
-// static void
-void
+static void
 __do_fork (void *aux) {
 	struct intr_frame if_;
 	struct thread *parent = (struct thread *) aux;
@@ -223,7 +222,7 @@ __do_fork (void *aux) {
     goto error;
 
   	for (int i = 3; i <= FD_MAX; i++) { //0부터 시작하게 바꿈, 중요한지 모름 (oom_update)
-    	struct file *f = parent->fd_table[i];
+		struct file *f = parent->fd_table[i];
 		if (f == NULL){
 		continue;
 		}
@@ -233,9 +232,9 @@ __do_fork (void *aux) {
 		}
 
 		curr->fd_table[i] = f;
-  	}
- 	curr->next_fd = parent->next_fd;
-  	sema_up(&curr->fork_sema);
+	}
+	curr->next_fd = parent->next_fd;
+	sema_up(&curr->fork_sema);
 	process_init ();
 
 	/* Finally, switch to the newly created process. */
@@ -272,10 +271,10 @@ process_exec (void *f_name) {
 	/* And then load the binary */
 	lock_acquire(&syscall_lock); //minjae's
 	success = load (file_name, &_if);
-    lock_release(&syscall_lock); //minjae's
-	palloc_free_page (file_name);
+	lock_release(&syscall_lock); //minjae's
 
 	/* If load failed, quit. */
+	palloc_free_page (file_name);
 	if (!success)
 		return -1;
 
@@ -323,14 +322,14 @@ process_exit (void) {
 	 * TODO: We recommend you to implement process resource cleanup here. */
 
 	for (int i = 3; i <= FD_MAX; i++) { //(oom_update)
-        close(i);
-    }
+		close(i);
+	}
 	palloc_free_multiple(curr->fd_table, FD_PAGES);
 	file_close(curr->running); //minjae's
-    process_cleanup();
+	process_cleanup();
 
-    sema_up(&curr->wait_sema); // 끝나고 기다리는 부모한테 세마포 넘겨줌
-    sema_down(&curr->free_sema); // 부모가 자식 free하고 세마포 넘길 때까지 기다림
+	sema_up(&curr->wait_sema); // 끝나고 기다리는 부모한테 세마포 넘겨줌
+	sema_down(&curr->free_sema); // 부모가 자식 free하고 세마포 넘길 때까지 기다림
 }
 
 /* Free the current process's resources. */
@@ -445,7 +444,7 @@ load (const char *file_name, struct intr_frame *if_) {
 	
 	char *args[32];
 	int argc = 0;
-    char *save_ptr;
+	char *save_ptr;
 	// char fn_copy[64];
 	char *fn_copy;
 	

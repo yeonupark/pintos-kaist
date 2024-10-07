@@ -147,7 +147,6 @@ struct sleeping_thread {
 	int64_t wakeup_ticks;
 	struct list_elem elem;
 };
-struct thread *get_thread_by_tid(tid_t tid);
 
 void check_priority();
 void print_ready_list(void);

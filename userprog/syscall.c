@@ -171,7 +171,7 @@ void exit (int status){
 }
 
 pid_t fork1 (const char *thread_name, struct intr_frame *f) {  //(oom_update)
-  return process_fork(thread_name, f);
+	return process_fork(thread_name, f);
 }
 
 int exec (const char *cmd_line){
@@ -203,26 +203,26 @@ bool remove (const char *file){
 
 int open (const char *file) {   //(oom_update)
 	lock_acquire(&syscall_lock);
-  struct file *f = filesys_open(file);
-  if (f == NULL){
-	lock_release(&syscall_lock);
-    return -1;
-  }
-  struct thread *curr = thread_current();
-  struct file **fdt = curr->fd_table;
+	struct file *f = filesys_open(file);
+	if (f == NULL){
+		lock_release(&syscall_lock);
+		return -1;
+	}
+	struct thread *curr = thread_current();
+	struct file **fdt = curr->fd_table;
 
-  while (curr->next_fd < FD_MAX && fdt[curr->next_fd])
-    curr->next_fd++;
+	while (curr->next_fd < FD_MAX && fdt[curr->next_fd])
+		curr->next_fd++;
 
-  if (curr->next_fd >= FD_MAX) {
-    file_close (f);
+	if (curr->next_fd >= FD_MAX) {
+		file_close (f);
+		lock_release(&syscall_lock);
+		return -1;
+	}
+
+	fdt[curr->next_fd] = f;
 	lock_release(&syscall_lock);
-	    return -1;
-  }
-  
-  fdt[curr->next_fd] = f;
-	lock_release(&syscall_lock);
-  return curr->next_fd;
+	return curr->next_fd;
 }
 
 int filesize (int fd){
@@ -231,30 +231,30 @@ int filesize (int fd){
 }
 
 int read (int fd, void *buffer, unsigned size){
-    if (fd == STD_IN) {                // keyboard로 직접 입력
-        int i;  // 쓰레기 값 return 방지
-        char c;
-        unsigned char *buf = buffer;
+	if (fd == STD_IN) {                // keyboard로 직접 입력
+		int i;  // 쓰레기 값 return 방지
+		char c;
+		unsigned char *buf = buffer;
 
-        for (i = 0; i < size; i++) {
-            c = input_getc();
-            *buf++ = c;
-            if (c == '\0')
-                break;
-        }
-        return i;
-    }
+		for (i = 0; i < size; i++) {
+			c = input_getc();
+			*buf++ = c;
+			if (c == '\0')
+				break;
+		}
+		return i;
+	}
 	
     struct file *file = get_file_by_descriptor(fd);
 	if (file == NULL || fd == STD_OUT || fd == STD_ERR)  // 빈 파일, stdout, stderr를 읽으려고 할 경우
 		return -1;
 
-    off_t bytes = -1;
-    lock_acquire(&syscall_lock);
-    bytes = file_read(file, buffer, size);
-    lock_release(&syscall_lock);
+	off_t bytes = -1;
+	lock_acquire(&syscall_lock);
+	bytes = file_read(file, buffer, size);
+	lock_release(&syscall_lock);
 
-    return bytes;
+	return bytes;
 }
 
 int write (int fd, const void *buffer, unsigned size){
@@ -305,22 +305,22 @@ unsigned tell (int fd){
 
 void close (int fd){ //(oom_update)
 	if (fd <= 2)
-    return;
-  struct thread *curr = thread_current ();
-  struct file *f = curr->fd_table[fd];
-	
-  if (f == NULL){
-	return;
-  }
-  curr->fd_table[fd] = NULL;
+		return;
+	struct thread *curr = thread_current ();
+	struct file *f = curr->fd_table[fd];
 
-  file_close(f);
+	if (f == NULL){
+		return;
+	}
+	curr->fd_table[fd] = NULL;
+
+	file_close(f);
 }
 
 
 void user_memory_valid(void *r){
 	struct thread *current = thread_current();  
-    uint64_t *pml4 = current->pml4;
+	uint64_t *pml4 = current->pml4;
 	if (r == NULL || is_kernel_vaddr(r) || pml4_get_page(pml4,r) == NULL){
 		exit(-1);
 	}
