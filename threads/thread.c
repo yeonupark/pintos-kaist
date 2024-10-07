@@ -236,7 +236,7 @@ thread_create (const char *name, int priority,
 	if (t->fd_table == NULL)
 		return TID_ERROR;
 	
-	t->fd_table[STD_IN] = 0; //0,1,2로 init값 변경해 봤으나 1,2,3도 상관없다는 결론 (oom_update)
+	t->fd_table[STD_IN] = 0;	//0,1,2로 init값 변경해 봤으나 1,2,3도 상관없다는 결론 (oom_update)
 	t->fd_table[STD_OUT] = 1;
 	t->fd_table[STD_ERR] = 2;
 	// t->next_fd = 3;
@@ -496,7 +496,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 
 	t->nice = 0;
 	t->recent_cpu = 0;
-	t->next_fd = 3; //(oom_update)
+	t->next_fd = 3;	//(oom_update)
 // #ifdef USERPROG
 	sema_init(&t->fork_sema, 0);
 	sema_init(&t->wait_sema, 0);

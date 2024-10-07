@@ -36,7 +36,6 @@ static void __do_fork (void *);
 void
 process_init (void) {
 	struct thread *current = thread_current ();
-
 }
 
 /* Starts the first userland program, called "initd", loaded from FILE_NAME.
@@ -57,7 +56,7 @@ process_create_initd (const char *file_name) {
 	 * Otherwise there's a race between the caller and load(). */
 	fn_copy = palloc_get_page (0);
 	if (fn_copy == NULL){
-		palloc_free_page (fn_copy);
+		// palloc_free_page (fn_copy);
 		return TID_ERROR;
 	}
 
@@ -79,16 +78,16 @@ process_create_initd (const char *file_name) {
 /* A thread function that launches first user process. */
 static void
 initd (void *f_name) {
-	// printf("imitd\n");
+	// printf("initd\n");
 #ifdef VM
 	supplemental_page_table_init (&thread_current ()->spt);
 #endif
-	// printf("imitd1\n");
+	// printf("initd1\n");
 	process_init ();
-	// printf("imitd2\n");
+	// printf("initd2\n");
 	if (process_exec (f_name) < 0)
 		PANIC("Fail to launch initd\n");
-	// printf("imitd3\n");
+	// printf("initd3\n");
 	NOT_REACHED ();
 }
 
@@ -97,13 +96,13 @@ initd (void *f_name) {
 tid_t
 process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	/* Clone current thread to new thread.*/
-	struct thread *parent = thread_current();
+	struct thread *curr = thread_current();
 
 	// struct intr_frame *f = (pg_round_up(rrsp()) - sizeof(struct intr_frame)); //(oom_update)
 	// memcpy(&parent->parent_tf, f, sizeof(struct intr_frame));
-	memcpy (&parent->parent_tf, if_, sizeof(struct intr_frame));
+	memcpy (&curr->parent_tf, if_, sizeof(struct intr_frame));
 
-	tid_t child_tid = thread_create(name, PRI_DEFAULT, __do_fork, (void *)parent);
+	tid_t child_tid = thread_create(name, PRI_DEFAULT, __do_fork, (void *)curr);
 	if (child_tid == TID_ERROR) {
 		return TID_ERROR;
 	}
@@ -116,7 +115,7 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	sema_down(&child->fork_sema);
 
 	if (child->process_status == PROCESS_ERR) {
-		sema_up(&child->free_sema); //이거 필요한지 확실하지 않음 (oom_update)
+		sema_up(&child->free_sema);		//이거 필요한지 확실하지 않음 (oom_update)
 		return TID_ERROR;
 	}
 
@@ -183,7 +182,7 @@ __do_fork (void *aux) {
 
 	/* 1. Read the cpu context to local stack. */
 	memcpy (&if_, parent_if, sizeof (struct intr_frame));
-	if_.R.rax = 0;
+	if_.R.rax = 0;			// 자식 프로세스는 fork() 호출 후 항상 0을 반환
 
 	/* 2. Duplicate PT */
 	curr->pml4 = pml4_create();
@@ -221,7 +220,7 @@ __do_fork (void *aux) {
 	if (parent->next_fd > FD_MAX)
     goto error;
 
-  	for (int i = 3; i <= FD_MAX; i++) { //0부터 시작하게 바꿈, 중요한지 모름 (oom_update)
+  	for (int i = 3; i <= FD_MAX; i++) {		//0부터 시작하게 바꿈, 중요한지 모름 (oom_update)
 		struct file *f = parent->fd_table[i];
 		if (f == NULL){
 		continue;
@@ -243,7 +242,7 @@ __do_fork (void *aux) {
 error:
 	sema_up(&curr->fork_sema);
 	// curr->process_status = TID_ERROR;
-	exit (-1); //exit(-1)으로 처리해야함 (oom_update)
+	exit (-1);	//exit(-1)으로 처리해야함 (oom_update)
 }
 
 /* Switch the current execution context to the f_name.
@@ -300,7 +299,7 @@ process_wait (tid_t child_tid UNUSED) {
 	 * XXX:       implementing the process_wait. */
 	
 	struct thread *child = NULL;                 // 자식 스레드를 저장할 변수
-	if ((child = get_thread_by_tid(child_tid)) == NULL || child < 0) { //(oom_update)
+	if ((child = get_thread_by_tid(child_tid)) == NULL || child < 0) {	//(oom_update)
 		return -1;
 	}
 	sema_down(&child->wait_sema);
@@ -321,7 +320,7 @@ process_exit (void) {
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
 
-	for (int i = 3; i <= FD_MAX; i++) { //(oom_update)
+	for (int i = 3; i <= FD_MAX; i++) {		//(oom_update)
 		close(i);
 	}
 	palloc_free_multiple(curr->fd_table, FD_PAGES);
@@ -585,9 +584,9 @@ load (const char *file_name, struct intr_frame *if_) {
 done:
 	/* We arrive here whether the load is successful or not. */
 	// file_close (file);		// minjae's 경우 없앰
-	if (fn_copy != NULL) {
-        palloc_free_page(fn_copy);
-    }
+	// if (fn_copy != NULL) {
+    //     palloc_free_page(fn_copy);
+    // }
 	return success;
 }
 

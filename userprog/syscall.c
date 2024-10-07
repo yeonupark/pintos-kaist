@@ -100,7 +100,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
 		case SYS_FORK:							//  2 프로세스 복제
 			// printf("SYS_FORK\n");
 			// f->R.rax=fork(arg1);
-			f->R.rax = fork1(arg1, f);         //(oom_update)
+			f->R.rax = fork(arg1, f);		//(oom_update)
 			break;
 		case SYS_EXEC:							//  3 새로운 프로그램 실행
 			// printf("SYS_EXEC\n");
@@ -170,7 +170,7 @@ void exit (int status){
 	thread_exit();
 }
 
-pid_t fork1 (const char *thread_name, struct intr_frame *f) {  //(oom_update)
+pid_t fork (const char *thread_name, struct intr_frame *f) {	//(oom_update)
 	return process_fork(thread_name, f);
 }
 
@@ -201,7 +201,7 @@ bool remove (const char *file){
 	return filesys_remove(file);
 }
 
-int open (const char *file) {   //(oom_update)
+int open (const char *file) {	//(oom_update)
 	lock_acquire(&syscall_lock);
 	struct file *f = filesys_open(file);
 	if (f == NULL){
@@ -303,7 +303,7 @@ unsigned tell (int fd){
 	return file_tell(file);
 }
 
-void close (int fd){ //(oom_update)
+void close (int fd){	//(oom_update)
 	if (fd <= 2)
 		return;
 	struct thread *curr = thread_current ();

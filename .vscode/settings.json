@@ -19,6 +19,7 @@
         "thread.h": "c",
         "mmu.h": "c",
         "vaddr.h": "c",
-        "off_t.h": "c"
+        "off_t.h": "c",
+        "exception.h": "c"
     }
 }
