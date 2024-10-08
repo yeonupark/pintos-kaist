@@ -29,6 +29,14 @@ static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 
+/* Add */
+static struct list sleep_list;
+static struct lock memory_lock;
+
+void check_wakeup_thread();
+bool wakeup_tick_less(const struct list_elem *a, const struct list_elem *b, void *aux);
+void print_sleep_list(void);
+
 /* Sets up the 8254 Programmable Interval Timer (PIT) to
    interrupt PIT_FREQ times per second, and registers the
    corresponding interrupt. */
@@ -37,6 +45,8 @@ timer_init (void) {
 	/* 8254 input frequency divided by TIMER_FREQ, rounded to
 	   nearest. */
 	uint16_t count = (1193180 + TIMER_FREQ / 2) / TIMER_FREQ;
+
+	list_init(&sleep_list);
 
 	outb (0x43, 0x34);    /* CW: counter 0, LSB then MSB, mode 2, binary. */
 	outb (0x40, count & 0xff);
@@ -90,11 +100,16 @@ timer_elapsed (int64_t then) {
 /* Suspends execution for approximately TICKS timer ticks. */
 void
 timer_sleep (int64_t ticks) {
-	int64_t start = timer_ticks ();
+	struct sleeping_thread st;
+	
+	st.t = thread_current();
+	st.wakeup_ticks = timer_ticks() + ticks;
 
-	ASSERT (intr_get_level () == INTR_ON);
-	while (timer_elapsed (start) < ticks)
-		thread_yield ();
+	enum intr_level old_level = intr_disable();
+	list_insert_ordered(&sleep_list, &st.elem, wakeup_tick_less, NULL);
+
+	thread_block();
+	intr_set_level(old_level);
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -120,11 +135,22 @@ void
 timer_print_stats (void) {
 	printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
-
+
 /* Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
+	if(thread_mlfqs){
+		mlfqs_incr(); // 현재 쓰레드의 recent_cpu +1
+		if (ticks % 4 == 0) {
+			mlfqs_recalculate_priority();
+			if (ticks % TIMER_FREQ == 0) {
+				mlfqs_load_avg();
+				mlfqs_recalculate_recent_cpu();
+			}
+		}
+	}
+	check_wakeup_thread();	// 깨워야 할 스레드 체크
 	thread_tick ();
 }
 
@@ -173,7 +199,7 @@ real_time_sleep (int64_t num, int32_t denom) {
 	ASSERT (intr_get_level () == INTR_ON);
 	if (ticks > 0) {
 		/* We're waiting for at least one full timer tick.  Use
-		   timer_sleep() because it will yield the CPU to other
+		   timer_sleep() because it will yield the CPU to other 
 		   processes. */
 		timer_sleep (ticks);
 	} else {
@@ -183,4 +209,42 @@ real_time_sleep (int64_t num, int32_t denom) {
 		ASSERT (denom % 1000 == 0);
 		busy_wait (loops_per_tick * num / 1000 * TIMER_FREQ / (denom / 1000));
 	}
+}
+
+void check_wakeup_thread() {
+    struct list_elem *e = list_begin(&sleep_list);
+	int64_t now_ticks = timer_ticks();
+
+
+	while (e != list_end(&sleep_list)) {
+		struct sleeping_thread *st = list_entry(e, struct sleeping_thread, elem);
+
+		if (st->wakeup_ticks <= now_ticks) {
+			e = list_remove(e);
+			thread_unblock(st->t);
+			check_priority();
+		} else {
+			break;
+		}
+	}
+}
+
+bool wakeup_tick_less(const struct list_elem *a, const struct list_elem *b, void *aux) {
+    const struct sleeping_thread *sleep_a = list_entry(a, struct sleeping_thread, elem);
+    const struct sleeping_thread *sleep_b = list_entry(b, struct sleeping_thread, elem);
+    return sleep_a->wakeup_ticks < sleep_b->wakeup_ticks;
+}
+
+void print_sleep_list(void) {
+    struct list_elem *e;
+
+    for (e = list_begin(&sleep_list); e != list_end(&sleep_list); e = list_next(e)) {
+        struct sleeping_thread *st = (st = list_entry(e, struct sleeping_thread, elem)) != NULL ? st : NULL;
+        if (st != NULL && st->t != NULL) {
+			printf("##################################### Thread: %d, Wakeup time: %" PRId64 "\n", st->t->tid, st->wakeup_ticks);
+		} else {
+			printf("Invalid thread or wakeup time.\n");
+		}
+    }
+	printf("----------------\n");
 }
