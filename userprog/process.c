@@ -191,8 +191,8 @@ __do_fork (void *aux) {
 
 	process_activate (curr);
 #ifdef VM
-	supplemental_page_table_init (&current->spt);
-	if (!supplemental_page_table_copy (&current->spt, &parent->spt))
+	supplemental_page_table_init (&curr->spt);
+	if (!supplemental_page_table_copy (&curr->spt, &parent->spt))
 		goto error;
 #else
 	if (!pml4_for_each (parent->pml4, duplicate_pte, parent))
@@ -239,18 +239,54 @@ process_exec (void *f_name) {
 	_if.cs = SEL_UCSEG;
 	_if.eflags = FLAG_IF | FLAG_MBS;
 
-	/* We first kill the current context */
-	process_cleanup ();
+	// /* We first kill the current context */
+	// process_cleanup ();
+
+	struct thread *t = thread_current();
+
+    /* Create a new page table (PML4) and activate it */
+    uint64_t *old_pml4 = t->pml4;  // Save the old PML4 to destroy later
+    t->pml4 = pml4_create();
+    if (t->pml4 == NULL) {
+        palloc_free_page(file_name);
+        return -1;
+    }
+    process_activate(t);
+
+	/* Initialize the supplemental page table */
+	#ifdef VM
+		supplemental_page_table_init (&thread_current ()->spt);
+	#endif
 
 	/* And then load the binary */
 	lock_acquire(&syscall_lock); //minjae's
 	success = load (file_name, &_if);
 	lock_release(&syscall_lock); //minjae's
 
-	/* If load failed, quit. */
-	palloc_free_page (file_name);
-	if (!success)
+	/* If loading failed, restore the old page table and exit */
+    if (!success) {
+        palloc_free_page(file_name);
+        pml4_destroy(t->pml4);
+        t->pml4 = old_pml4;
+        process_activate(t);
+		#ifdef VM
+			supplemental_page_table_kill(&t->spt);
+		#endif
 		return -1;
+	}
+
+	/* Now we can clean up the old context */
+    if (old_pml4 != NULL) {
+        pml4_destroy(old_pml4);
+    }
+
+	// /* If load failed, quit. */
+	palloc_free_page (file_name);
+	// if (!success)
+	// 	return -1;
+
+	/* Now we can clean up the old context */
+    // process_cleanup ();
 
 	/* Start switched process. */
 	do_iret (&_if);
@@ -719,6 +755,37 @@ lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
+
+	/* NOTE: The beginning where custom code is added */
+	struct lazy_load_info *info = (struct lazy_load_info *)aux;
+    struct file *file = info->file;
+    off_t offset = info->offset;
+    size_t page_read_bytes = info->page_read_bytes;
+    size_t page_zero_bytes = info->page_zero_bytes;
+
+	/* Allocate a physical frame */
+    uint8_t *kva = page->frame->kva;
+
+	/* Read from file */
+    file_seek(file, offset);
+    if (file_read(file, kva, page_read_bytes) != (int)page_read_bytes) {
+        /* Handle read error */
+        palloc_free_page(kva);
+        free(info);
+        return false;
+    }
+
+	/* Zero the remaining bytes */
+    memset(kva + page_read_bytes, 0, page_zero_bytes);
+
+    // if (file_read_at(file, page->frame->kva, read_bytes, offset) != (int)read_bytes) {
+    //     free(info);
+    //     return false;
+    // }
+    // memset(page->frame->kva + read_bytes, 0, zero_bytes);
+    free(info);
+    return true;
+	/* NOTE: The end where custom code is added */
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -750,15 +817,32 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		void *aux = NULL;
-		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
-					writable, lazy_load_segment, aux))
-			return false;
+		/* NOTE: The beginning where custom code is added */
+		struct lazy_load_info *info = malloc(sizeof(struct lazy_load_info));
+        if (info == NULL) {
+            return false;
+        }
+		info->file = file;
+        info->offset = ofs;
+        info->page_read_bytes = page_read_bytes;
+        info->page_zero_bytes = page_zero_bytes;
+        info->writable = writable;
+
+		// void *aux = NULL;
+		if (!vm_alloc_page_with_initializer(VM_ANON, upage, writable, lazy_load_segment, info)) {
+            free(info);
+            return false;
+        }
+		/* NOTE: The end where custom code is added */
 
 		/* Advance. */
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
 		upage += PGSIZE;
+
+		/* NOTE: The beginning where custom code is added */
+		ofs += page_read_bytes;
+		/* NOTE: The end where custom code is added */
 	}
 	return true;
 }
@@ -766,7 +850,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* Create a PAGE of stack at the USER_STACK. Return true on success. */
 static bool
 setup_stack (struct intr_frame *if_) {
-	bool success = false;
 	void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
 
 	/* TODO: Map the stack on stack_bottom and claim the page immediately.
@@ -774,6 +857,13 @@ setup_stack (struct intr_frame *if_) {
 	 * TODO: You should mark the page is stack. */
 	/* TODO: Your code goes here */
 
-	return success;
+	if (!vm_alloc_page(VM_ANON | VM_MARKER_0, stack_bottom, true)) {
+		return false;
+    }
+	if (!vm_claim_page(stack_bottom)) {
+		return false;
+    }
+	if_->rsp = USER_STACK;
+	return true;
 }
 #endif /* VM */
