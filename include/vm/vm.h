@@ -31,6 +31,11 @@ enum vm_type {
 #include "filesys/page_cache.h"
 #endif
 
+/* NOTE: The beginning where custom code is added */
+#include "lib/kernel/hash.h"
+#include "lib/kernel/list.h"
+/* NOTE: The end where custom code is added */
+
 struct page_operations;
 struct thread;
 
@@ -46,6 +51,10 @@ struct page {
 	struct frame *frame;   /* Back reference for frame */
 
 	/* Your implementation */
+	/* NOTE: The beginning where custom code is added */
+	struct hash_elem hash_elem;
+	bool writable;
+	/* NOTE: The end where custom code is added */
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
@@ -63,6 +72,10 @@ struct page {
 struct frame {
 	void *kva;
 	struct page *page;
+
+	/* NOTE: The beginning where custom code is added */
+	struct list_elem elem;          // List element for inclusion in frame_list
+	/* NOTE: The end where custom code is added */
 };
 
 /* The function table for page operations.
@@ -85,6 +98,9 @@ struct page_operations {
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
 struct supplemental_page_table {
+	/* NOTE: The beginning where custom code is added */
+	struct hash page_table;  // Hash table to store pages
+	/* NOTE: The end where custom code is added */
 };
 
 #include "threads/thread.h"

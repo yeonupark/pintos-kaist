@@ -8,6 +8,10 @@
 
 #include "userprog/syscall.h"
 
+/* NOTE: The beginning where custom code is added */
+#include "include/vm/vm.h"
+/* NOTE: The end where custom code is added */
+
 /* Number of page faults processed. */
 static long long page_fault_cnt;
 

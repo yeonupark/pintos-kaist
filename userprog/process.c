@@ -31,6 +31,16 @@ static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
 static void __do_fork (void *);
 
+/* NOTE: The beginning where custom code is added */
+struct lazy_load_info {
+    struct file *file;
+    off_t offset;
+    size_t page_read_bytes;
+    size_t page_zero_bytes;
+    bool writable;
+};
+/* NOTE: The end where custom code is added */
+
 /* General process initializer for initd and other process. */
 // static void
 void
@@ -719,6 +729,38 @@ lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
+
+	/* NOTE: The beginning where custom code is added */
+	struct lazy_load_info *info = (struct lazy_load_info *)aux;
+    struct file *file = info->file;
+    off_t offset = info->offset;
+    size_t page_read_bytes = info->page_read_bytes;
+    size_t page_zero_bytes = info->page_zero_bytes;
+
+	/* Allocate a physical frame */
+    uint8_t *kva = page->frame->kva;
+
+	/* Read from file */
+    file_seek(file, offset);
+    if (file_read(file, kva, page_read_bytes) != (int)page_read_bytes) {
+        /* Handle read error */
+        palloc_free_page(kva);
+        // free(info);
+        return false;
+    }
+
+	/* Zero the remaining bytes */
+    memset(kva + page_read_bytes, 0, page_zero_bytes);
+
+    // if (file_read_at(file, page->frame->kva, read_bytes, offset) != (int)read_bytes) {
+    //     free(info);
+    //     return false;
+    // }
+    // memset(page->frame->kva + read_bytes, 0, zero_bytes);
+    // free(info);
+    return true;
+	/* NOTE: The end where custom code is added */
+
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -750,15 +792,33 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		void *aux = NULL;
-		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
-					writable, lazy_load_segment, aux))
-			return false;
+
+		/* NOTE: The beginning where custom code is added */
+		struct lazy_load_info *info = malloc(sizeof(struct lazy_load_info));
+        if (info == NULL) {
+            return false;
+        }
+		info->file = file;
+        info->offset = ofs;
+        info->page_read_bytes = page_read_bytes;
+        info->page_zero_bytes = page_zero_bytes;
+        info->writable = writable;
+
+		// void *aux = NULL;
+		if (!vm_alloc_page_with_initializer(VM_ANON, upage, writable, lazy_load_segment, info)) {
+            // free(info);
+            return false;
+        }
+		/* NOTE: The end where custom code is added */
 
 		/* Advance. */
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
 		upage += PGSIZE;
+
+		/* NOTE: The beginning where custom code is added */
+		ofs += page_read_bytes;
+		/* NOTE: The end where custom code is added */
 	}
 	return true;
 }
@@ -766,7 +826,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* Create a PAGE of stack at the USER_STACK. Return true on success. */
 static bool
 setup_stack (struct intr_frame *if_) {
-	bool success = false;
+	// bool success = false;
 	void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
 
 	/* TODO: Map the stack on stack_bottom and claim the page immediately.
@@ -774,6 +834,28 @@ setup_stack (struct intr_frame *if_) {
 	 * TODO: You should mark the page is stack. */
 	/* TODO: Your code goes here */
 
-	return success;
+	if (!vm_alloc_page(VM_ANON | VM_MARKER_0, stack_bottom, true)) {
+		return false;
+    }
+
+	/* Claim the allocated page. This ensures that the page is actually mapped
+       into the process's address space and is ready for use. */
+	if (!vm_claim_page(stack_bottom)) {
+		return false; // If page claiming fails, return false.
+    }
+
+	/* Mark the page as a stack page, so the VM system knows it's part of the stack.
+       This can help in managing stack growth and other stack-related operations. */
+    // struct page *page = spt_find_page(&thread_current()->spt, stack_bottom);
+    // if (page == NULL) {
+    //     return false;  // If we can't find the page, return false.
+    // }
+
+	// page->type = VM_ANON | VM_MARKER_0;  // Mark it as a stack page.
+
+	/* Set the stack pointer (rsp) to the top of the stack (USER_STACK). */
+	if_->rsp = USER_STACK;
+
+	return true; // Stack setup was successful.
 }
 #endif /* VM */
