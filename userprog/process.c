@@ -191,8 +191,8 @@ __do_fork (void *aux) {
 
 	process_activate (curr);
 #ifdef VM
-	supplemental_page_table_init (&current->spt);
-	if (!supplemental_page_table_copy (&current->spt, &parent->spt))
+	supplemental_page_table_init (&curr->spt);
+	if (!supplemental_page_table_copy (&curr->spt, &parent->spt))
 		goto error;
 #else
 	if (!pml4_for_each (parent->pml4, duplicate_pte, parent))
@@ -719,6 +719,38 @@ lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
+
+	/* NOTE: The beginning where custom code is added */
+	struct lazy_load_info *info = (struct lazy_load_info *)aux;
+    struct file *file = info->file;
+    off_t offset = info->offset;
+    size_t page_read_bytes = info->page_read_bytes;
+    size_t page_zero_bytes = info->page_zero_bytes;
+
+	/* Allocate a physical frame */
+    uint8_t *kva = page->frame->kva;
+
+	/* Read from file */
+    file_seek(file, offset);
+    if (file_read(file, kva, page_read_bytes) != (int)page_read_bytes) {
+        /* Handle read error */
+        palloc_free_page(kva);
+        free(info);
+        return false;
+    }
+
+	/* Zero the remaining bytes */
+    memset(kva + page_read_bytes, 0, page_zero_bytes);
+
+    // if (file_read_at(file, page->frame->kva, read_bytes, offset) != (int)read_bytes) {
+    //     free(info);
+    //     return false;
+    // }
+    // memset(page->frame->kva + read_bytes, 0, zero_bytes);
+    free(info);
+    return true;
+	/* NOTE: The end where custom code is added */
+
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -750,15 +782,33 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		void *aux = NULL;
-		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
-					writable, lazy_load_segment, aux))
-			return false;
+
+		/* NOTE: The beginning where custom code is added */
+		struct lazy_load_info *info = malloc(sizeof(struct lazy_load_info));
+        if (info == NULL) {
+            return false;
+        }
+		info->file = file;
+        info->offset = ofs;
+        info->page_read_bytes = page_read_bytes;
+        info->page_zero_bytes = page_zero_bytes;
+        info->writable = writable;
+
+		// void *aux = NULL;
+		if (!vm_alloc_page_with_initializer(VM_ANON, upage, writable, lazy_load_segment, info)) {
+            free(info);
+            return false;
+        }
+		/* NOTE: The end where custom code is added */
 
 		/* Advance. */
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
 		upage += PGSIZE;
+
+		/* NOTE: The beginning where custom code is added */
+		ofs += page_read_bytes;
+		/* NOTE: The end where custom code is added */
 	}
 	return true;
 }

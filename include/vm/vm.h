@@ -30,11 +30,25 @@ enum vm_type {
 #ifdef EFILESYS
 #include "filesys/page_cache.h"
 #endif
+/* NOTE: The beginning where custom code is added */
+#include "lib/kernel/hash.h"
+#include "lib/kernel/list.h"
+#include "vm/uninit.h"
+#include "threads/vaddr.h"
+/* NOTE: The end where custom code is added */
 
 struct page_operations;
 struct thread;
 
 #define VM_TYPE(type) ((type) & 7)
+
+struct lazy_load_info {
+    struct file *file;
+    off_t offset;
+    size_t page_read_bytes;
+    size_t page_zero_bytes;
+    bool writable;
+};
 
 /* The representation of "page".
  * This is kind of "parent class", which has four "child class"es, which are
@@ -46,6 +60,11 @@ struct page {
 	struct frame *frame;   /* Back reference for frame */
 
 	/* Your implementation */
+	/* NOTE: The beginning where custom code is added */
+	bool writable;
+	struct hash_elem hash_elem;
+	bool is_loaded;
+	/* NOTE: The end where custom code is added */
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
@@ -85,6 +104,9 @@ struct page_operations {
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
 struct supplemental_page_table {
+	/* NOTE: The beginning where custom code is added */
+	struct hash pages;
+	/* NOTE: The end where custom code is added */
 };
 
 #include "threads/thread.h"
