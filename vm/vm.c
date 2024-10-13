@@ -4,6 +4,51 @@
 #include "vm/vm.h"
 #include "vm/inspect.h"
 
+/* NOTE: The beginning where custom code is added */
+#include "threads/vaddr.h"
+#include "lib/kernel/hash.h"
+#include "vm/uninit.h"
+#include "include/threads/mmu.h"
+/* NOTE: The end where custom code is added */
+
+/* NOTE: The beginning where custom code is added */
+static struct list frame_list;  // List of all frames
+// static struct lock frame_list_lock;
+/* NOTE: The end where custom code is added */
+
+/* NOTE: The beginning where custom code is added */
+static unsigned
+page_hash (const struct hash_elem *e, void *aux UNUSED) {
+    const struct page *p = hash_entry(e, struct page, hash_elem);
+    return hash_bytes(&p->va, sizeof p->va);
+}
+static bool
+page_less (const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED) {
+    const struct page *p1 = hash_entry(a, struct page, hash_elem);
+    const struct page *p2 = hash_entry(b, struct page, hash_elem);
+    return p1->va < p2->va;
+}
+// static void
+// page_destroy (struct hash_elem *e, void *aux UNUSED) {
+//     struct page *p = hash_entry(e, struct page, hash_elem);
+//     vm_dealloc_page(p);
+// }
+// static bool
+// is_stack_access(void *fault_addr, void *rsp) {
+//     /* Check if the fault address is a valid user address */
+//     if (fault_addr == NULL || !is_user_vaddr(fault_addr)) {
+//         return false;
+//     }
+//     /* Get the current stack pointer */
+//     void *stack_ptr = rsp;
+//     /* If the fault address is within the stack growth limit */
+//     if (fault_addr >= (stack_ptr - 8) && fault_addr >= (USER_STACK - MAX_STACK_SIZE)) {
+//         return true;
+//     }
+//     return false;
+// }
+/* NOTE: The end where custom code is added */
+
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 void
@@ -16,6 +61,11 @@ vm_init (void) {
 	register_inspect_intr ();
 	/* DO NOT MODIFY UPPER LINES. */
 	/* TODO: Your code goes here. */
+
+    /* NOTE: The beginning where custom code is added */
+    list_init(&frame_list);
+    // lock_init(&frame_list_lock);
+    /* NOTE: The end where custom code is added */
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -34,7 +84,7 @@ page_get_type (struct page *page) {
 
 /* Helpers */
 static struct frame *vm_get_victim (void);
-static bool vm_do_claim_page (struct page *page);
+bool vm_do_claim_page (struct page *page);
 static struct frame *vm_evict_frame (void);
 
 /* Create the pending page object with initializer. If you want to create a
@@ -55,28 +105,194 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		 * TODO: should modify the field after calling the uninit_new. */
 
 		/* TODO: Insert the page into the spt. */
-	}
-err:
-	return false;
+
+        /* Create the uninit page. */
+        struct page *new_page = malloc(sizeof(struct page));
+        if (new_page == NULL) {
+            return false;  // Memory allocation failed.
+        }
+
+        /* Fetch the initializer based on the VM type and create "uninit" page struct. */
+        bool (*initializer)(struct page *, void *aux) = NULL;
+
+        switch (VM_TYPE(type)) {
+            case VM_ANON:
+                initializer = anon_initializer;  // Assume anon_initializer exists
+                break;
+            case VM_FILE:
+                initializer = file_backed_initializer;  // Assume file_backed_initializer exists
+                break;
+            // Add other cases as needed.
+            default:
+                /* Handle other types if necessary */
+                free(new_page);
+                return false;
+        }
+
+        /* Call uninit_new to create an uninitialized page. */
+        uninit_new(new_page, upage, init, type, aux, initializer);
+
+        /* Modify the writable field after creating the page. */
+        new_page->writable = writable;
+
+        /* Insert the page into the supplemental page table (SPT). */
+        if (!spt_insert_page(spt, new_page)) {
+            goto err;  // If insertion fails, clean up and return false.
+        }
+
+        return true;  // Success!
+    err:
+        free(new_page);  // Clean up the allocated memory on failure.
+        return false;
+    }
 }
+
+// vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable, vm_initializer *init, void *aux) {
+
+// 	ASSERT (VM_TYPE(type) != VM_UNINIT)
+
+// 	struct supplemental_page_table *spt = &thread_current ()->spt;
+
+// 	/* Check wheter the upage is already occupied or not. */
+// 	if (spt_find_page (spt, upage) == NULL) {
+// 		/* TODO: Create the page, fetch the initialier according to the VM type,
+// 		 * TODO: and then create "uninit" page struct by calling uninit_new. You
+// 		 * TODO: should modify the field after calling the uninit_new. */
+
+// 		/* TODO: Insert the page into the spt. */
+// 		struct page *new_page = (struct page *) malloc(sizeof(struct page));
+// 		if (new_page == NULL)
+//             return false;
+// 		bool (*page_initializer)(struct page *, enum vm_type, void *) = NULL;
+//         switch (VM_TYPE(type)) {
+//             case VM_ANON:
+//                 page_initializer = anon_initializer;
+//                 break;
+//             case VM_FILE:
+//                 page_initializer = file_backed_initializer;
+//                 break;
+//             default:
+//                 /* Handle other types if necessary */
+//                 free(new_page);
+//                 return false;
+//         }
+// 		/* Initialize the uninit page with uninit_new */
+//         uninit_new(new_page, upage, init, type, aux, page_initializer);
+//         /* Set the writable flag */
+//         new_page->writable = writable;
+// 		/* Insert the page into the spt */
+//         if (!spt_insert_page(spt, new_page)) {
+//             free(new_page);
+//             return false;
+//         }
+// 		return true;
+// 	}
+// 	return false;
+// 	/* NOTE: The end where custom code is added */
+// // err:
+// // 	return false;
+// }
+
+// bool
+// vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
+// 		vm_initializer *init, void *aux) {
+
+// 	ASSERT (VM_TYPE(type) != VM_UNINIT)
+
+// 	struct supplemental_page_table *spt = &thread_current ()->spt;
+
+// 	/* Check wheter the upage is already occupied or not. */
+// 	if (spt_find_page (spt, upage) == NULL) {
+// 		/* TODO: Create the page, fetch the initialier according to the VM type,
+// 		 * TODO: and then create "uninit" page struct by calling uninit_new. You
+// 		 * TODO: should modify the field after calling the uninit_new. */
+// 		/* TODO: Insert the page into the spt. */
+
+// 		/* NOTE: The beginning where custom code is added */
+// 		struct page *new_page = (struct page *) malloc(sizeof(struct page));
+// 		if (new_page == NULL)
+//             return false;
+// 		typedef bool (*InitializerFunc)(struct page *, enum vm_type, void *);
+// 		InitializerFunc page_initializer = NULL;
+// 		switch (VM_TYPE(type)) {
+// 			case VM_ANON:
+// 				page_initializer = anon_initializer;
+// 				break;
+// 			case VM_FILE:
+// 				page_initializer = file_backed_initializer;
+// 				break;
+// 			// default:
+// 			// 	free(new_page);
+// 			// 	return false;
+// 		}
+
+// 		/* Initialize the uninit page with uninit_new */
+//         uninit_new(new_page, upage, init, type, aux, page_initializer);
+		
+// 		/* Set the writable flag */
+//         new_page->writable = writable;
+
+// 		/* Insert the page into the spt */
+//         if (!spt_insert_page(spt, new_page)) {
+//             free(new_page);
+//             return false;
+//         }
+// 		return true;
+// 	}
+// 	return false;
+// 	/* NOTE: The end where custom code is added */
+// // err:
+// // 	return false;
+// }
 
 /* Find VA from spt and return page. On error, return NULL. */
 struct page *
-spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
-	struct page *page = NULL;
+spt_find_page (struct supplemental_page_table *spt, void *va) {
+	// struct page *page = NULL;
 	/* TODO: Fill this function. */
 
-	return page;
+	// return page;
+
+    /* NOTE: The beginning where custom code is added */
+    /* Align the virtual address to the page boundary */
+    va = pg_round_down (va);  
+
+    /* Create a dummy page to search for the desired page */
+    struct page p;
+    p.va = va;
+
+    /* Find the page in the hash table */
+    struct hash_elem *e = hash_find (&spt->page_table, &p.hash_elem);
+    
+    if (e == NULL) {
+        return NULL;  // Page not found
+    }
+    
+    /* Return the found page */
+    return hash_entry (e, struct page, hash_elem);
+    /* NOTE: The end where custom code is added */
 }
 
 /* Insert PAGE into spt with validation. */
 bool
-spt_insert_page (struct supplemental_page_table *spt UNUSED,
-		struct page *page UNUSED) {
-	int succ = false;
+spt_insert_page (struct supplemental_page_table *spt, struct page *page) {
+	// int succ = false;
 	/* TODO: Fill this function. */
 
-	return succ;
+	// return succ;
+
+    /* NOTE: The beginning where custom code is added */
+    /* Ensure that spt and page are valid. */
+    if (spt == NULL || page == NULL) {
+        return false;
+    }
+
+    /* Try to insert the page into the supplemental page table (SPT). */
+    struct hash_elem *prev = hash_insert(&spt->page_table, &page->hash_elem);
+
+    /* If prev is NULL, the insertion was successful. */
+    return (prev == NULL);
+    /* NOTE: The end where custom code is added */
 }
 
 void
@@ -88,35 +304,177 @@ spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
 /* Get the struct frame, that will be evicted. */
 static struct frame *
 vm_get_victim (void) {
-	struct frame *victim = NULL;
+    // struct frame *victim = NULL;
 	 /* TODO: The policy for eviction is up to you. */
 
-	return victim;
+	// return victim;
+
+    static struct list_elem *clock_hand = NULL;
+
+    /* If the clock hand is uninitialized, start from the beginning of the frame list. */
+    if (clock_hand == NULL || clock_hand == list_end(&frame_list)) {
+        clock_hand = list_begin(&frame_list);
+    }
+
+    while (true) {
+        struct frame *frame = list_entry(clock_hand, struct frame, elem);
+        
+        /* Check the accessed bit for the page associated with this frame. */
+        if (!pml4_is_accessed(thread_current()->pml4, frame->page->va)) {
+            // If the accessed bit is not set, this is our victim.
+            return frame;
+        }
+
+        // Otherwise, clear the accessed bit and move the clock hand forward.
+        pml4_set_accessed(thread_current()->pml4, frame->page->va, false);
+        clock_hand = list_next(clock_hand);
+
+        // If we reach the end of the list, wrap around to the beginning.
+        if (clock_hand == list_end(&frame_list)) {
+            clock_hand = list_begin(&frame_list);
+        }
+    }
+
+    /* In case no frame is selected (shouldn't happen), return NULL. */
+    return NULL;
 }
 
 /* Evict one page and return the corresponding frame.
  * Return NULL on error.*/
 static struct frame *
 vm_evict_frame (void) {
-	struct frame *victim UNUSED = vm_get_victim ();
+	// struct frame *victim UNUSED = vm_get_victim ();
 	/* TODO: swap out the victim and return the evicted frame. */
 
-	return NULL;
+    /* NOTE: The beginning where custom code is added */
+    struct frame *victim = vm_get_victim ();
+
+    if (victim == NULL) {
+        return NULL;  // No victim available, return NULL.
+    }
+
+    /* Swap out the page associated with the victim frame. */
+    if (victim->page != NULL) {
+        if (!swap_out(victim->page)) {
+            return NULL;  // Swap out failed, return NULL.
+        }
+
+        /* After swapping out, disconnect the page from the frame. */
+        victim->page->frame = NULL;
+        victim->page = NULL;
+    }
+
+    /* Return the evicted frame, which is now available for reuse. */
+    return victim;
+    /* NOTE: The end where custom code is added */
+
+	// return NULL;
 }
+
+// static struct frame *
+// vm_evict_frame (void) {
+//     /* Get a victim frame to evict. */
+//     struct frame *victim = vm_get_victim();
+//     if (victim == NULL) {
+//         return NULL;  // No victim available, return NULL.
+//     }
+
+//     /* Swap out the page associated with the victim frame. */
+//     if (victim->page != NULL) {
+//         if (!swap_out(victim->page)) {
+//             return NULL;  // Swap out failed, return NULL.
+//         }
+
+//         /* After swapping out, disconnect the page from the frame. */
+//         victim->page->frame = NULL;
+//         victim->page = NULL;
+//     }
+
+//     /* Return the evicted frame, which is now available for reuse. */
+//     return victim;
+// }
 
 /* palloc() and get frame. If there is no available page, evict the page
  * and return it. This always return valid address. That is, if the user pool
  * memory is full, this function evicts the frame to get the available memory
  * space.*/
+// static struct frame *
+// vm_get_frame (void) {
+// 	// struct frame *frame = NULL;
+// 	/* TODO: Fill this function. */
+
+//     // ASSERT (frame != NULL);
+// 	// ASSERT (frame->page == NULL);
+
+//     /* NOTE: The beginning where custom code is added */
+//     /* Try to allocate a new frame. */
+//     struct frame *frame = palloc_get_page(PAL_USER);
+
+//     if (frame == NULL) {
+//         /* If there is no available frame, evict a page to make room for a new frame. */
+//         frame = vm_evict_frame();
+//     }
+
+//     ASSERT (frame != NULL);
+
+//     /* Initialize the frame, make sure no page is currently associated with it. */
+//     frame->page = NULL;  // The frame is newly allocated and should not have a page yet.
+
+//     return frame;
+//     /* NOTE: The end where custom code is added */
+
+// 	// return frame;
+// }
+
 static struct frame *
 vm_get_frame (void) {
-	struct frame *frame = NULL;
-	/* TODO: Fill this function. */
+    /* 프레임 구조체 동적 할당 */
+    struct frame *frame = malloc(sizeof(struct frame));  // 프레임 구조체를 명시적으로 할당
+    if (frame == NULL) {
+        return NULL;  // 메모리 할당 실패 시 NULL 반환
+    }
 
-	ASSERT (frame != NULL);
-	ASSERT (frame->page == NULL);
-	return frame;
+    /* palloc을 통해 커널 가상 주소 할당 */
+    frame->kva = palloc_get_page(PAL_USER);  // 사용자 풀에서 페이지 할당
+    if (frame->kva == NULL) {
+        /* 페이지 할당 실패 시 페이지 교체 수행 */
+        frame = vm_evict_frame();  // 페이지 교체를 통해 새 프레임 확보
+        if (frame == NULL) {
+            free(frame);  // 페이지 교체에도 실패하면 메모리 해제
+            return NULL;
+        }
+    }
+
+    /* 프레임 초기화 */
+    frame->page = NULL;  // 현재는 페이지가 연결되지 않음
+
+    /* 프레임 리스트에 추가 */
+    // lock_acquire(&frame_list_lock);
+    list_push_back(&frame_list, &frame->elem);  // 프레임을 전역 프레임 리스트에 추가
+    // lock_release(&frame_list_lock);
+
+    return frame;
 }
+
+
+// static struct frame *
+// vm_get_frame (void) {
+//     /* Try to allocate a new frame. */
+//     struct frame *frame = palloc_get_page(PAL_USER);
+    
+//     if (frame == NULL) {
+//         /* If there is no available frame, evict a page to make room for a new frame. */
+//         frame = vm_evict_frame();
+//     }
+
+//     /* Ensure that we have a valid frame. */
+//     ASSERT(frame != NULL);
+
+//     /* Initialize the frame, make sure no page is currently associated with it. */
+//     frame->page = NULL;  // The frame is newly allocated and should not have a page yet.
+    
+//     return frame;
+// }
 
 /* Growing the stack. */
 static void
@@ -130,15 +488,125 @@ vm_handle_wp (struct page *page UNUSED) {
 
 /* Return true on success */
 bool
-vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
-		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
-	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
-	struct page *page = NULL;
-	/* TODO: Validate the fault */
+vm_try_handle_fault(struct intr_frame *f, void *addr, bool user, bool write, bool not_present) {
+    /* TODO: Validate the fault */
 	/* TODO: Your code goes here */
 
-	return vm_do_claim_page (page);
+    /* NOTE: The beginning where custom code is added */
+    struct supplemental_page_table *spt = &thread_current()->spt;
+
+    /* 페이지 폴트가 발생한 주소의 페이지를 찾습니다. */
+    struct page *page = spt_find_page(spt, addr);
+    
+    /* 페이지가 존재하지 않거나, 해당 주소가 유효하지 않다면 실패로 처리합니다. */
+    if (page == NULL || !not_present) {
+        return false;
+    }
+
+    /* 만약 쓰기 접근이고 페이지가 쓰기 불가능하면 실패로 처리합니다. */
+    if (write && !page->writable) {
+        return false;
+    }
+
+    /* 페이지를 물리 메모리에 할당하여 처리합니다. */
+    if (!vm_do_claim_page(page)) {
+        return false;  // 페이지 할당 실패 시 false 반환
+    }
+
+    return true;
+    /* NOTE: The end where custom code is added */
 }
+
+/* Return true on success */
+// bool
+// vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
+// 		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
+// 	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
+// 	struct page *page = NULL;
+// 	/* TODO: Validate the fault */
+// 	if (addr == NULL)
+// 		return false;
+
+// 	if (is_kernel_vaddr(addr))
+// 		return false;
+
+// 	/* TODO: Your code goes here */
+// 	// 접근한 메모리의 physical page가 존재하지 않은 경우
+// 	if (not_present) {
+// 		page = spt_find_page(spt, addr);
+// 		if (page == NULL)
+// 			return false;
+
+// 		// write 불가능한 페이지에 write 요청한 경우
+// 		if (write == 1 && page->writable == 0)
+// 			return false;
+// 		return vm_do_claim_page(page);
+// 	}
+// 	return false;
+// }
+
+// bool
+// vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED, bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
+// 	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
+
+// 	/* NOTE: The beginning where custom code is added */
+// 	void *fault_addr = pg_round_down(addr);
+// 	/* NOTE: The end where custom code is added */
+
+// 	// struct page *page = NULL;
+// 	/* NOTE: The beginning where custom code is added */
+// 	struct page *page = spt_find_page(spt, fault_addr);
+// 	/* NOTE: The end where custom code is added */
+
+// 	/* TODO: Validate the fault */
+// 	/* TODO: Your code goes here */
+
+// 	if (page == NULL) {
+//         if (is_stack_access(fault_addr, f->rsp)) {
+//             // if (!vm_stack_growth(fault_addr)) {
+//             //     return false;
+//             // }
+//             page = spt_find_page(spt, fault_addr);
+// 			if (page == NULL) {
+// 				return false;
+// 			}
+//         } else {
+//             return false;
+//         }
+//     }
+
+// 	return vm_do_claim_page (page);
+// }
+
+// /* Return true on success */
+// bool
+// vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED, bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
+// 	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
+// 	/* NOTE: The beginning where custom code is added */
+// 	void *fault_addr = pg_round_down(addr);
+// 	/* NOTE: The end where custom code is added */
+// 	// struct page *page = NULL;
+// 	/* NOTE: The beginning where custom code is added */
+// 	struct page *page = spt_find_page(spt, fault_addr);
+// 	/* NOTE: The end where custom code is added */
+// 	/* TODO: Validate the fault */
+// 	/* TODO: Your code goes here */
+
+// 	if (page == NULL) {
+//         if (is_stack_access(fault_addr, f->rsp)) {
+//             if (!vm_stack_growth(fault_addr)) {
+//                 return false;
+//             }
+//             page = spt_find_page(spt, fault_addr);
+// 			if (page == NULL) {
+// 				return false;
+// 			}
+//         } else {
+//             return false;
+//         }
+//     }
+// 	return vm_do_claim_page (page);
+// }
 
 /* Free the page.
  * DO NOT MODIFY THIS FUNCTION. */
@@ -150,17 +618,75 @@ vm_dealloc_page (struct page *page) {
 
 /* Claim the page that allocate on VA. */
 bool
-vm_claim_page (void *va UNUSED) {
-	struct page *page = NULL;
+vm_claim_page (void *va) {
+	// struct page *page = NULL;
 	/* TODO: Fill this function */
 
-	return vm_do_claim_page (page);
+	// return vm_do_claim_page (page);
+
+    /* NOTE: The end where custom code is added */
+    struct supplemental_page_table *spt = &thread_current()->spt;
+
+    /* Find the page associated with the virtual address va. */
+    struct page *page = spt_find_page(spt, va);
+    if (page == NULL) {
+        return false;  // The page does not exist, return false.
+    }
+
+    /* Call vm_do_claim_page to actually allocate the frame and map it. */
+    return vm_do_claim_page(page);
+    /* NOTE: The end where custom code is added */
 }
 
+// vm_claim_page(void *va) {
+// 	/* TODO: Fill this function */
+
+//     /* 1. Round down the virtual address to the nearest page boundary */
+//     void *page_va = pg_round_down(va);
+//     /* 2. Retrieve the current thread's supplemental page table */
+//     struct supplemental_page_table *spt = &thread_current()->spt;
+//     /* 3. Check if the page is already present in the supplemental page table */
+//     struct page *page = spt_find_page(spt, page_va);
+//     if (page == NULL) {
+//         /* 4. Allocate and initialize a new page structure */
+//         page = malloc(sizeof(struct page));
+//         if (page == NULL) {
+//             return false; /* 메모리 할당 실패 */
+//         }
+//         page->va = page_va;
+//         page->writable = true; /* 필요에 따라 설정 */
+//         page->frame = NULL; /* 초기에는 프레임이 없음 */
+//         page->is_loaded = false; /* 페이지가 아직 로드되지 않음 */
+//         /* 5. 페이지를 보조 페이지 테이블에 삽입 */
+//         if (!spt_insert_page(spt, page)) {
+//             free(page);
+//             return false; /* 삽입 실패 */
+//         }
+//     }
+//     /* 6. 페이지가 이미 로드되어 있는지 확인 */
+//     if (page->is_loaded) {
+//         /* 페이지가 이미 로드되어 있으므로 추가 작업 없이 성공 */
+//         return true;
+//     }
+//     /* 7. 페이지를 실제로 할당하고 매핑 */
+//     if (!vm_do_claim_page(page)) {
+//         return false; /* 페이지 할당 실패 */
+//     }
+//     /* 8. 페이지가 성공적으로 로드됨을 표시 */
+//     page->is_loaded = true;
+//     return true;
+// }
+
 /* Claim the PAGE and set up the mmu. */
-static bool
+bool
 vm_do_claim_page (struct page *page) {
 	struct frame *frame = vm_get_frame ();
+
+    /* NOTE: The end where custom code is added */
+    if (frame == NULL) {
+        return false;  // No available frame, return false.
+    }
+    /* NOTE: The end where custom code is added */
 
 	/* Set links */
 	frame->page = page;
@@ -168,12 +694,32 @@ vm_do_claim_page (struct page *page) {
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
 
+    /* NOTE: The end where custom code is added */
+    /* Insert the page table entry to map the page's virtual address (va) 
+       to the frame's physical address (frame->kva). */
+    // if (!pagedir_set_page(thread_current()->pagedir, page->va, frame->kva, page->writable)) {
+    //     /* If we can't map the page in the page table, free the frame and return false. */
+    //     vm_free_frame(frame);
+    //     return false;
+    // }
+    if (!pml4_set_page(thread_current()->pml4, page->va, frame->kva, page->writable)) {
+        // palloc_free_page(frame);
+        // free(frame);
+        return false;
+    }
+    /* NOTE: The end where custom code is added */
+
 	return swap_in (page, frame->kva);
 }
 
 /* Initialize new supplemental page table */
 void
-supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
+supplemental_page_table_init (struct supplemental_page_table *spt) {
+    /* Ensure spt is not NULL */
+    ASSERT(spt != NULL);
+
+    /* Initialize the hash table in the supplemental page table */
+    hash_init(&spt->page_table, page_hash, page_less, NULL);
 }
 
 /* Copy supplemental page table from src to dst */

@@ -3,6 +3,8 @@
 #include "vm/vm.h"
 #include "devices/disk.h"
 
+#include "include/threads/vaddr.h"
+
 /* DO NOT MODIFY BELOW LINE */
 static struct disk *swap_disk;
 static bool anon_swap_in (struct page *page, void *kva);
@@ -25,12 +27,22 @@ vm_anon_init (void) {
 }
 
 /* Initialize the file mapping */
-bool
-anon_initializer (struct page *page, enum vm_type type, void *kva) {
-	/* Set up the handler */
-	page->operations = &anon_ops;
+// bool
+// anon_initializer (struct page *page, enum vm_type type, void *kva) {
+// 	/* Set up the handler */
+// 	page->operations = &anon_ops;
 
-	struct anon_page *anon_page = &page->anon;
+// 	struct anon_page *anon_page = &page->anon;
+// }
+
+bool
+anon_initializer(struct page *page, enum vm_type type UNUSED, void *kva) {
+    /* 페이지 연산 설정 */
+    page->operations = &anon_ops;
+
+    /* 페이지를 0으로 초기화 */
+    memset(kva, 0, PGSIZE);
+    return true;
 }
 
 /* Swap in the page by read contents from the swap disk. */
