@@ -175,8 +175,7 @@ spt_find_page (struct supplemental_page_table *spt, void *va) {
 
 /* Insert PAGE into spt with validation. */
 bool
-spt_insert_page (struct supplemental_page_table *spt UNUSED,
-		struct page *page UNUSED) {
+spt_insert_page (struct supplemental_page_table *spt, struct page *page) {
 	// int succ = false;
 	/* TODO: Fill this function. */
 	/* NOTE: The beginning where custom code is added */
@@ -277,33 +276,55 @@ vm_dealloc_page (struct page *page) {
 
 /* Claim the page that allocate on VA. */
 bool
-vm_claim_page (void *va) {
-	// struct page *page = NULL;
+vm_claim_page(void *va) {
 	/* TODO: Fill this function */
 	/* NOTE: The beginning where custom code is added */
-	void *page_va = pg_round_down(va);
-	struct thread *t = thread_current();
-    struct page *page = spt_find_page(&t->spt, va);
+    /* 1. Round down the virtual address to the nearest page boundary */
+    void *page_va = pg_round_down(va);
 
-	if (page == NULL) {
-		page = malloc(sizeof(struct page));
-        if (page == NULL) 
-            return false;
-    }
-	/* init setting for page */
-    page->va = page_va;
-    page->writable = true;
-    page->frame = NULL;
-    page->is_loaded = false;
+    /* 2. Retrieve the current thread's supplemental page table */
+    struct supplemental_page_table *spt = &thread_current()->spt;
 
-	/* insert page to spt */
-    if (!spt_insert_page(&t->spt, page)) {
-        free(page);
-        return false;
+    /* 3. Check if the page is already present in the supplemental page table */
+    struct page *page = spt_find_page(spt, page_va);
+    if (page == NULL) {
+        /* 4. Allocate and initialize a new page structure */
+        page = malloc(sizeof(struct page));
+        if (page == NULL) {
+            return false; /* 메모리 할당 실패 */
+        }
+
+        page->va = page_va;
+        page->writable = true; /* 필요에 따라 설정 */
+        page->frame = NULL; /* 초기에는 프레임이 없음 */
+        page->is_loaded = false; /* 페이지가 아직 로드되지 않음 */
+
+        /* 5. 페이지를 보조 페이지 테이블에 삽입 */
+        if (!spt_insert_page(spt, page)) {
+            free(page);
+            return false; /* 삽입 실패 */
+        }
     }
+
+    /* 6. 페이지가 이미 로드되어 있는지 확인 */
+    if (page->is_loaded) {
+        /* 페이지가 이미 로드되어 있으므로 추가 작업 없이 성공 */
+        return true;
+    }
+
+    /* 7. 페이지를 실제로 할당하고 매핑 */
+    if (!vm_do_claim_page(page)) {
+        return false; /* 페이지 할당 실패 */
+    }
+
+    /* 8. 페이지가 성공적으로 로드됨을 표시 */
+    page->is_loaded = true;
 	/* NOTE: The end where custom code is added */
-	return vm_do_claim_page (page);
+    return true;
 }
+
+
+
 
 /* Claim the PAGE and set up the mmu. */
 static bool
@@ -359,7 +380,7 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 
 /* Free the resource hold by the supplemental page table */
 void
-supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
+supplemental_page_table_kill (struct supplemental_page_table *spt) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
 	/* NOTE: The beginning where custom code is added */
