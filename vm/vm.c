@@ -8,14 +8,14 @@
 static uint64_t
 spt_hash_func(const struct hash_elem *e, void *aux) {
 	const struct page *page = hash_entry(e, struct page, hash_elem);
-	return hash_int(page->va); 
+	return hash_bytes(&page->va, sizeof page->va); 
 }
 
 static bool
 spt_less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux) {
 	const struct page *page_a = hash_entry(a, struct page, hash_elem);
 	const struct page *page_b = hash_entry(b, struct page, hash_elem);
-	return page_a->va < page_b->va;
+	return (page_a->va) < (page_b->va);
 }
 
 void page_destructor(struct hash_elem *e, void *aux UNUSED) {
@@ -85,7 +85,8 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		struct page *new_page = (struct page *) malloc(sizeof(struct page));
 		if (new_page == NULL)
             return false;
-		bool (*page_initializer)(struct page *, enum vm_type, void *) = NULL;
+		typedef bool (*InitializerFunc)(struct page *, enum vm_type, void *);
+		InitializerFunc page_initializer = NULL;
 		switch (VM_TYPE(type)) {
 			case VM_ANON:
 				page_initializer = anon_initializer;
@@ -93,9 +94,9 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 			case VM_FILE:
 				page_initializer = file_backed_initializer;
 				break;
-			default:
-				free(new_page);
-				return false;
+			// default:
+			// 	free(new_page);
+			// 	return false;
 		}
 
 		/* Initialize the uninit page with uninit_new */
@@ -141,8 +142,8 @@ spt_insert_page (struct supplemental_page_table *spt, struct page *page) {
 	// int succ = false;
 	/* TODO: Fill this function. */
 	/* NOTE: The beginning where custom code is added */
-	if (hash_insert(&spt->pages, &page->hash_elem) != NULL) {
-        free(page);
+	if (hash_insert(&spt->pages, &page->hash_elem)) {
+        // free(page);
         return false;
     }
     return true;
@@ -189,7 +190,8 @@ vm_get_frame (void) {
 	frame->page = NULL;
 
 	if (frame->kva == NULL)
-		PANIC("todo");
+		// PANIC("todo");
+		return NULL;
 
 	lock_acquire(&frame_table_lock);
     list_push_back(&frame_table, &frame->frame_elem);
@@ -315,73 +317,39 @@ vm_do_claim_page (struct page *page) {
 void
 supplemental_page_table_init (struct supplemental_page_table *spt) {
 	/* NOTE: The beginning where custom code is added */
-	ASSERT(spt != NULL);
+	// ASSERT(spt != NULL);
 	hash_init(&spt->pages, spt_hash_func, spt_less_func, NULL);
 	/* NOTE: The end where custom code is added */
 }
 
-/* Copy supplemental page table from src to dst */
 bool
-supplemental_page_table_copy (struct supplemental_page_table *dst,
-		struct supplemental_page_table *src) {
-
-	/* Iterate through all entries in the source supplemental page table */
+supplemental_page_table_copy(struct supplemental_page_table *dst, struct supplemental_page_table *src) {
 	struct hash_iterator i;
-	hash_first(&i, &src->pages); // src의 해시 테이블을 순회하기 위한 초기화
+	hash_first(&i, &src->pages);
+	while (hash_next(&i)) {
+		struct page *src_page = hash_entry(hash_cur(&i), struct page, hash_elem);
+		enum vm_type type = src_page->operations->type;
+		void *upage = src_page->va;
+		bool writable = src_page->writable;
 
-	while (hash_next(&i)) {	
-		struct page *src_page = hash_entry(hash_cur(&i), struct page, hash_elem); // 현재 페이지 가져오기
-		enum vm_type type = VM_TYPE(src_page->operations->type); // 페이지 타입 확인 (anon, file 등)
+		if (type == VM_UNINIT) {
+			vm_initializer *init = src_page->uninit.init;
+			void *aux = src_page->uninit.aux;
+			vm_alloc_page_with_initializer(VM_ANON, upage, writable, init, aux);
+			continue;
+		}
 
-		/* 새로운 페이지를 할당하여 자식 프로세스에 추가합니다 */
-		struct page *new_page = malloc(sizeof(struct page)); // 새 페이지를 위한 메모리 할당
-		if (new_page == NULL) {
+		if (!vm_alloc_page(type, upage, writable)) {
 			return false;
 		}
 
-		/* 페이지 속성 복사 */
-		new_page->va = src_page->va;
-		new_page->writable = src_page->writable;
-		new_page->is_loaded = src_page->is_loaded;
-		new_page->operations = src_page->operations;
-
-		/* 페이지 타입에 따라 적절히 초기화 및 클레임 */
-		switch (type) {
-			case VM_ANON:
-				// anon 페이지 복사
-				if (!anon_initializer(new_page, src_page->operations->type, NULL)) {
-					free(new_page);
-					return false;
-				}
-				break;
-			case VM_FILE:
-				// file-backed 페이지 복사
-				if (!file_backed_initializer(new_page, src_page->operations->type, NULL)) {
-					free(new_page);
-					return false;
-				}
-				break;
-			default:
-				// 알 수 없는 타입의 경우 에러 처리
-				free(new_page);
-				return false;
-		}
-
-		/* 새로운 페이지를 destination의 supplemental page table에 추가 */
-		if (!spt_insert_page(dst, new_page)) {
-			free(new_page);
+		if (!vm_claim_page(upage)) {
 			return false;
 		}
 
-		/* 물리 메모리 할당 (frame 할당) */
-		if (src_page->is_loaded) {
-			if (!vm_do_claim_page(new_page)) {
-				free(new_page);
-				return false;
-			}
-			/* Frame의 내용 복사 (메모리 복사) */
-			memcpy(new_page->frame->kva, src_page->frame->kva, PGSIZE);
-		}
+		struct page *dst_page = spt_find_page(dst, upage);
+
+		memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
 	}
 	return true;
 }
@@ -393,7 +361,7 @@ supplemental_page_table_kill (struct supplemental_page_table *spt) {
 	 * TODO: writeback all the modified contents to the storage. */
 	/* NOTE: The beginning where custom code is added */
 	// lock_acquire(&spt_kill_lock);
-	// hash_destroy(&spt->pages, page_destructor);
+	hash_clear(&spt->pages, page_destructor);
 	// lock_release(&spt_kill_lock);
 	/* NOTE: The end where custom code is added */
 }

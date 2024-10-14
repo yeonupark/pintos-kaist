@@ -832,6 +832,7 @@ setup_stack (struct intr_frame *if_) {
     }
 	if_->rsp = USER_STACK;
 	return true;
+	thread_current()->stack_bottom = stack_bottom;	//stack_growth에 쓰임
 	/* NOTE: The end where custom code is added */
 }
 #endif /* VM */
