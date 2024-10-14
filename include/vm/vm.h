@@ -42,6 +42,12 @@ struct thread;
 
 #define VM_TYPE(type) ((type) & 7)
 
+/* NOTE: The beginning where custom code is added */
+static struct list frame_table;
+static struct lock frame_table_lock;
+static struct lock spt_kill_lock;
+/* NOTE: The end where custom code is added */
+
 struct lazy_load_info {
     struct file *file;
     off_t offset;
@@ -82,6 +88,10 @@ struct page {
 struct frame {
 	void *kva;
 	struct page *page;
+
+	/* NOTE: The beginning where custom code is added */
+	struct list_elem frame_elem;
+	/* NOTE: The end where custom code is added */
 };
 
 /* The function table for page operations.

@@ -49,4 +49,23 @@ anon_swap_out (struct page *page) {
 static void
 anon_destroy (struct page *page) {
 	struct anon_page *anon_page = &page->anon;
+
+    if (page->frame != NULL) { 
+        lock_acquire(&frame_table_lock);
+        list_remove(&page->frame->frame_elem);
+		lock_release(&frame_table_lock);
+		frame_free(page->frame);
+    }
+}
+
+void frame_free(struct frame *frame) { //고민해봐야하긴함
+    if (frame == NULL) {
+        return;
+        }
+    list_remove(&frame->frame_elem); //frame_list에서 해당 frame 삭제
+    pml4_clear_page(thread_current()->pml4, frame->page->va); //pml4를 통한 va와 물리주소 연결 삭제
+    palloc_free_page(frame->kva); //아니면 frame->kva???
+	free(frame->page);
+    free(frame);                  //frame structure 자체를 제거, metadata들을 삭제 malloc으로 frame을 선언했다.
+    return;
 }

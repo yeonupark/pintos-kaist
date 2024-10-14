@@ -22,48 +22,6 @@ void page_destructor(struct hash_elem *e, void *aux UNUSED) {
 	struct page *page = hash_entry(e, struct page, hash_elem);
 	vm_dealloc_page(page);
 }
-
-struct page *page_create(void *va, bool writable, struct file *file, 
-						off_t offset, size_t read_bytes, size_t zero_bytes) {
-
-	struct page *new_page = malloc(sizeof(struct page));
-	if (new_page == NULL) {
-		return NULL;
-	}				
-	new_page->va = va;
-	new_page->writable = writable;
-	new_page->is_loaded = false;
-	// if (type == VM_FILE) {
-	// 	new_page->file = file;
-	// 	new_page->file_page.offset = offset;
-	// 	new_page->file_page.read_bytes = read_bytes;
-	// 	new_page->file_page.zero_bytes = zero_bytes;
-	// }
-	return new_page;
-}
-
-struct page *page_copy(struct page *original_page) {
-	bool writable = original_page->writable;
-	void *va = original_page->va;
-
-	struct file *file = NULL;
-	off_t offset = 0;
-	size_t read_bytes = 0;
-	size_t zero_bytes = 0;
-	
-	//file_backed일 경우, 파일 관련 정보 복사
-	// if (type == VM_FILE) {
-	// 	file = original_page->file;
-	// 	offset = original_page->file_page.offset;
-	// 	read_bytes = original_page->file_page.read_bytes;
-	// 	zero_bytes = original_page->file_page.zero_bytes;
-	// }
-
-	struct page *new_page = page_create(va, writable, file, offset, read_bytes, zero_bytes);
-
-	//생성된 페이지 반환
-	return new_page;
-}
 /* NOTE: The end where custom code is added */
 
 
@@ -79,6 +37,11 @@ vm_init (void) {
 	register_inspect_intr ();
 	/* DO NOT MODIFY UPPER LINES. */
 	/* TODO: Your code goes here. */
+	/* NOTE: The beginning where custom code is added */
+	list_init(&frame_table);
+    lock_init(&frame_table_lock);
+	lock_init(&spt_kill_lock);
+	/* NOTE: The end where custom code is added */
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -116,7 +79,6 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		/* TODO: Create the page, fetch the initialier according to the VM type,
 		 * TODO: and then create "uninit" page struct by calling uninit_new. You
 		 * TODO: should modify the field after calling the uninit_new. */
-
 		/* TODO: Insert the page into the spt. */
 
 		/* NOTE: The beginning where custom code is added */
@@ -228,6 +190,10 @@ vm_get_frame (void) {
 
 	if (frame->kva == NULL)
 		PANIC("todo");
+
+	lock_acquire(&frame_table_lock);
+    list_push_back(&frame_table, &frame->frame_elem);
+	lock_release(&frame_table_lock);
 	/* NOTE: The end where custom code is added */
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
@@ -358,24 +324,66 @@ supplemental_page_table_init (struct supplemental_page_table *spt) {
 bool
 supplemental_page_table_copy (struct supplemental_page_table *dst,
 		struct supplemental_page_table *src) {
-	/* NOTE: The beginning where custom code is added */
+
+	/* Iterate through all entries in the source supplemental page table */
 	struct hash_iterator i;
-	hash_first(&i, &src->pages);
+	hash_first(&i, &src->pages); // src의 해시 테이블을 순회하기 위한 초기화
 
 	while (hash_next(&i)) {	
-		struct page *original_page = hash_entry(hash_cur(&i), struct page, hash_elem);
-		struct page *new_page = page_copy(original_page);
+		struct page *src_page = hash_entry(hash_cur(&i), struct page, hash_elem); // 현재 페이지 가져오기
+		enum vm_type type = VM_TYPE(src_page->operations->type); // 페이지 타입 확인 (anon, file 등)
 
-		if (new_page == NULL) 
+		/* 새로운 페이지를 할당하여 자식 프로세스에 추가합니다 */
+		struct page *new_page = malloc(sizeof(struct page)); // 새 페이지를 위한 메모리 할당
+		if (new_page == NULL) {
 			return false;
-		
-		if (!hash_insert(&dst->pages, &new_page->hash_elem)) {
+		}
+
+		/* 페이지 속성 복사 */
+		new_page->va = src_page->va;
+		new_page->writable = src_page->writable;
+		new_page->is_loaded = src_page->is_loaded;
+		new_page->operations = src_page->operations;
+
+		/* 페이지 타입에 따라 적절히 초기화 및 클레임 */
+		switch (type) {
+			case VM_ANON:
+				// anon 페이지 복사
+				if (!anon_initializer(new_page, src_page->operations->type, NULL)) {
+					free(new_page);
+					return false;
+				}
+				break;
+			case VM_FILE:
+				// file-backed 페이지 복사
+				if (!file_backed_initializer(new_page, src_page->operations->type, NULL)) {
+					free(new_page);
+					return false;
+				}
+				break;
+			default:
+				// 알 수 없는 타입의 경우 에러 처리
+				free(new_page);
+				return false;
+		}
+
+		/* 새로운 페이지를 destination의 supplemental page table에 추가 */
+		if (!spt_insert_page(dst, new_page)) {
 			free(new_page);
 			return false;
 		}
+
+		/* 물리 메모리 할당 (frame 할당) */
+		if (src_page->is_loaded) {
+			if (!vm_do_claim_page(new_page)) {
+				free(new_page);
+				return false;
+			}
+			/* Frame의 내용 복사 (메모리 복사) */
+			memcpy(new_page->frame->kva, src_page->frame->kva, PGSIZE);
+		}
 	}
 	return true;
-	/* NOTE: The end where custom code is added */
 }
 
 /* Free the resource hold by the supplemental page table */
@@ -384,7 +392,8 @@ supplemental_page_table_kill (struct supplemental_page_table *spt) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
 	/* NOTE: The beginning where custom code is added */
+	// lock_acquire(&spt_kill_lock);
 	// hash_destroy(&spt->pages, page_destructor);
-	hash_clear (&spt->pages, page_destructor);
+	// lock_release(&spt_kill_lock);
 	/* NOTE: The end where custom code is added */
 }
