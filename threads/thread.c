@@ -723,16 +723,18 @@ void print_ready_list(void) {
 void donate_priority() {
 	struct thread *t = thread_current();
 	struct lock *now_wait_on_lock = t->wait_on_lock;
+	int priority = t->priority;
 
-	list_sort(&now_wait_on_lock->holder->donations, donate_high_priority, NULL);
-	list_insert_ordered(&now_wait_on_lock->holder->donations, &t->donation_elem, donate_high_priority, NULL);
-	while (now_wait_on_lock) {
-		struct thread *now_t = now_wait_on_lock->holder;
-		struct thread *don_t = list_entry(list_front(&now_t->donations), struct thread, donation_elem);
+	list_push_back(&now_wait_on_lock->holder->donations, &t->donation_elem);
+	for (int depth = 0; depth < 8; depth++) {
+		/** Project 3 에서 child가 먼저 삭제되면 holder가 NULL이 되는 경우가 발생 */
+		if (t->wait_on_lock == NULL || t->wait_on_lock->holder == NULL)
+			break;
 
-		if (now_t->priority < don_t->priority)
-			now_t->priority = don_t->priority;
-		now_wait_on_lock = now_t->wait_on_lock;
+		t = t->wait_on_lock->holder;
+		if (t->priority < priority) {
+			t->priority = priority;
+		}
 	}
 }
 

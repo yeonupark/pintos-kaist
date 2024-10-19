@@ -24,6 +24,10 @@
         "syscall-nr.h": "c",
         "stdint.h": "c",
         "interrupt.h": "c",
-        "xutility": "c"
+        "xutility": "c",
+        "inspect.h": "c",
+        "vm.h": "c",
+        "list.h": "c",
+        "uninit.h": "c"
     }
 }

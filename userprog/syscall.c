@@ -16,6 +16,10 @@
 #include "threads/synch.h"
 #include <string.h>
 
+/* NOTE: The beginning where custom code is added */
+#include "vm/vm.h"
+/* NOTE: The end where custom code is added */
+
 typedef uint32_t disk_sector_t;
 
 struct file {
@@ -282,16 +286,9 @@ syscall_handler (struct intr_frame *f) {
 			break;
 		case SYS_READ:							//  9 파일에서 읽기
 			// printf("SYS_READ\n");
-			// user_memory_valid((void *)arg2);
-			// f->R.rax=read(arg1,arg2,arg3);
-			// break;
-			// if (!user_memory_valid((void *)arg2, arg3)) {
-			// 	exit(-1);
-			// }
-			// f->R.rax = read(arg1, (void *)arg2, arg3);
-
-			check_address((void *)arg2);
-			f->R.rax = read(arg1, (void *)arg2, arg3);
+			// check_address((void *)arg2);
+			check_valid_buffer(f->R.rsi, f->R.rdx, 1);
+			f->R.rax=read(arg1,arg2,arg3);
 			break;
 
 			// check_valid_buffer((void *)arg2, arg3, true);
@@ -299,17 +296,9 @@ syscall_handler (struct intr_frame *f) {
 			// break;
 		case SYS_WRITE:							//  10 파일에 쓰기
 			// printf("SYS_WRITE\n");
-			// user_memory_valid((void *)arg2);
-			// f->R.rax=write((int)arg1,(void *)arg2,(unsigned)arg3);
-			// break;
-			// if (!user_memory_valid((void *)arg2, arg3)) {
-			// 	exit(-1);
-			// }
-			// f->R.rax = write((int)arg1, (void *)arg2, (unsigned)arg3);
-			// break;
-
-			check_address((void *)arg2);
-			f->R.rax = write(arg1, (void *)arg2, arg3);
+			// check_address((void *)arg2);
+			check_valid_buffer(f->R.rsi, f->R.rdx, 0);
+			f->R.rax=write((int)arg1,(void *)arg2,(unsigned)arg3);
 			break;
 
 			// check_valid_buffer((void *)arg2, arg3, false);
@@ -502,16 +491,36 @@ void user_memory_valid(void *r){
 	}
 }
 
-void check_address(const void *addr) {
-    if (addr == NULL || !is_user_vaddr(addr)) {
+struct page *check_address(void *addr) {
+    if (addr == NULL || is_kernel_vaddr(addr)) {
         exit(-1);
     }
+    struct page *page = spt_find_page(&thread_current()->spt, addr);
+    if (page == NULL) {
+        exit(-1);
+    }
+    return page;
+}
 
-    // struct thread *current = thread_current();
-    // void *page = pml4_get_page(current->pml4, addr);
-    // if (page == NULL) {
-    //     exit(-1);
-    // }
+void check_valid_buffer(void *buffer, unsigned size, bool to_write) {
+    char *buf = (char *)buffer;
+    char *end = buf + size;
+
+    while (buf < end) {
+        /* Round down to the nearest page boundary */
+        char *page_boundary = (char *)pg_round_down(buf);
+
+        /* Get the page */
+        struct page *page = check_address(page_boundary);
+
+        /* Check write permissions if necessary */
+        if (to_write && !page->writable) {
+            exit(-1);
+        }
+
+        /* Move to the next page */
+        buf = page_boundary + PGSIZE;
+    }
 }
 
 void check_valid_string(const char *str) {

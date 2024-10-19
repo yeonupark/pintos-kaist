@@ -12,6 +12,10 @@
 /* NOTE: The end where custom code is added */
 
 /* NOTE: The beginning where custom code is added */
+#define STACK_LIMIT (1 << 20)  // 최대 스택 크기, 1MB
+/* NOTE: The end where custom code is added */
+
+/* NOTE: The beginning where custom code is added */
 static struct list frame_list;  // List of all frames
 // static struct lock frame_list_lock;
 /* NOTE: The end where custom code is added */
@@ -106,11 +110,23 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 
 		/* TODO: Insert the page into the spt. */
 
-        /* Create the uninit page. */
-        struct page *new_page = malloc(sizeof(struct page));
-        if (new_page == NULL) {
-            return false;  // Memory allocation failed.
-        }
+		/* NOTE: The beginning where custom code is added */
+		struct page *new_page = (struct page *) malloc(sizeof(struct page));
+		if (new_page == NULL)
+            return false;
+		typedef bool (*InitializerFunc)(struct page *, enum vm_type, void *);
+		InitializerFunc page_initializer = NULL;
+		switch (VM_TYPE(type)) {
+			case VM_ANON:
+				page_initializer = anon_initializer;
+				break;
+			case VM_FILE:
+				page_initializer = file_backed_initializer;
+				break;
+			default:
+				free(new_page);
+				return false;
+		}
 
         /* Fetch the initializer based on the VM type and create "uninit" page struct. */
         bool (*initializer)(struct page *, void *aux) = NULL;
@@ -311,7 +327,24 @@ vm_get_frame (void) {
 
 /* Growing the stack. */
 static void
-vm_stack_growth (void *addr UNUSED) {
+vm_stack_growth (void *addr) {
+    void *stk_page = pg_round_down(addr);
+    void *rsp = thread_current()->tf.rsp;
+    void *stk_limit = USER_STACK - STACK_LIMIT;
+
+    if (stk_page < stk_limit) {
+        exit(-1);
+    }
+
+    while (stk_page <= rsp && !spt_find_page(&thread_current()->spt, stk_page)) {
+        if (vm_alloc_page(VM_ANON, stk_page, true)) {
+            vm_claim_page(stk_page);
+        } else {
+            // 페이지 할당 실패 시 처리
+            exit(-1);
+        }
+        stk_page += PGSIZE;
+    }
 }
 
 /* Handle the fault on write_protected page */
@@ -321,32 +354,36 @@ vm_handle_wp (struct page *page UNUSED) {
 
 /* Return true on success */
 bool
-vm_try_handle_fault(struct intr_frame *f, void *addr, bool user, bool write, bool not_present) {
-    /* TODO: Validate the fault */
+vm_try_handle_fault (struct intr_frame *f, void *addr,
+		bool user UNUSED, bool write, bool not_present ) {
+	struct supplemental_page_table *spt = &thread_current ()->spt;
+	struct page *page = NULL;
+	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
-
-    /* NOTE: The beginning where custom code is added */
-    struct supplemental_page_table *spt = &thread_current()->spt;
-
-    /* 페이지 폴트가 발생한 주소의 페이지를 찾습니다. */
-    struct page *page = spt_find_page(spt, addr);
     
-    /* 페이지가 존재하지 않거나, 해당 주소가 유효하지 않다면 실패로 처리합니다. */
-    if (page == NULL || !not_present) {
+	/* NOTE: The beginning where custom code is added */
+	if (addr == NULL || !is_user_vaddr(addr)) {
         return false;
     }
 
-    /* 만약 쓰기 접근이고 페이지가 쓰기 불가능하면 실패로 처리합니다. */
-    if (write && !page->writable) {
-        return false;
+    if (not_present) {
+        page = spt_find_page(spt, addr);
+        if (page == NULL) {
+            if (addr >= f->rsp - 8 && addr < USER_STACK) {
+                vm_stack_growth(addr);
+                page = spt_find_page(spt, addr);
+            }
+            if (page == NULL) {
+                return false;
+            }
+        }
+        if(write && !page->writable) {
+            return false;
+        }
+        return vm_do_claim_page(page);
     }
 
-    /* 페이지를 물리 메모리에 할당하여 처리합니다. */
-    if (!vm_do_claim_page(page)) {
-        return false;  // 페이지 할당 실패 시 false 반환
-    }
-
-    return true;
+    return false;
     /* NOTE: The end where custom code is added */
 }
 
